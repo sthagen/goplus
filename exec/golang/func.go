@@ -1,5 +1,5 @@
 /*
- Copyright 2020 Qiniu Cloud (qiniu.com)
+ Copyright 2020 The GoPlus Authors (goplus.org)
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -188,7 +188,7 @@ func (p *Builder) Return(n int32) *Builder {
 
 // EndFunc instr
 func (p *Builder) EndFunc(fun *FuncInfo) *Builder {
-	p.endBlockStmt()
+	p.endBlockStmt(1)
 	body := &ast.BlockStmt{List: fun.getStmts(p)}
 	name := fun.name
 	if name != "" {
