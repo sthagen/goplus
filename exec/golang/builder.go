@@ -28,9 +28,9 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/qiniu/goplus/exec.spec"
-	"github.com/qiniu/goplus/exec/golang/internal/go/format"
-	"github.com/qiniu/goplus/exec/golang/internal/go/printer"
+	"github.com/goplus/gop/exec.spec"
+	"github.com/goplus/gop/exec/golang/internal/go/format"
+	"github.com/goplus/gop/exec/golang/internal/go/printer"
 	"github.com/qiniu/x/log"
 )
 
@@ -96,6 +96,7 @@ type Builder struct {
 	comprehens  func() // current comprehension
 	identBase   int    // auo-increasement ident index
 	*scopeCtx          // current block scope
+	inDefer     bool   // in defer statement currently
 }
 
 // NewBuilder creates a new Code Builder instance.
@@ -123,13 +124,13 @@ func (p *Builder) autoIdent() string {
 }
 
 var (
-	tyMainFunc = reflect.TypeOf((*func())(nil)).Elem()
-	unnamedVar = Ident("_")
-	gopRet     = Ident("_gop_ret")
-	appendIden = Ident("append")
-	makeIden   = Ident("make")
-	newIden    = Ident("new")
-	nilIden    = Ident("nil")
+	tyMainFunc  = reflect.TypeOf((*func())(nil)).Elem()
+	unnamedVar  = Ident("_")
+	gopRet      = Ident("_gop_ret")
+	appendIdent = Ident("append")
+	makeIdent   = Ident("make")
+	newIdent    = Ident("new")
+	nilIdent    = Ident("nil")
 )
 
 // Resolve resolves all unresolved labels/functions/consts/etc.

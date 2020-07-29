@@ -18,14 +18,16 @@ package golang
 
 import (
 	"fmt"
+	"go/ast"
+	"reflect"
 	"testing"
 
-	"github.com/qiniu/goplus/cl"
-	"github.com/qiniu/goplus/exec.spec"
+	"github.com/goplus/gop/cl"
+	"github.com/goplus/gop/exec.spec"
 	"github.com/qiniu/x/log"
 
-	qexec "github.com/qiniu/goplus/exec/bytecode"
-	_ "github.com/qiniu/goplus/lib"
+	qexec "github.com/goplus/gop/exec/bytecode"
+	_ "github.com/goplus/gop/lib"
 )
 
 // I is a Go package instance.
@@ -68,6 +70,50 @@ func main() {
 	}
 }
 
+func TestIndex(t *testing.T) {
+	codeExp := `package main
+
+import fmt "fmt"
+
+var a []float64
+
+func main() {
+	a = []float64{3.2, 1.2, 2.4}
+	a[1] = 1.6
+	fmt.Println(a[0], &a[1])
+}
+`
+	println, _ := I.FindFuncv("println")
+	a := NewVar(reflect.SliceOf(exec.TyFloat64), "a")
+	code := NewBuilder("main", nil, nil).Interface().
+		DefineVar(a).
+		EndStmt(nil, &stmtState{rhsBase: 0}).
+		Push(3.2).
+		Push(1.2).
+		Push(2.4).
+		MakeArray(reflect.SliceOf(exec.TyFloat64), 3).
+		StoreVar(a).
+		EndStmt(nil, &stmtState{rhsBase: 0}).
+		Push(1.6).
+		LoadVar(a).
+		Push(1).
+		SetIndex(-1).
+		EndStmt(nil, &stmtState{rhsBase: 0}).
+		LoadVar(a).
+		Index(0).
+		LoadVar(a).
+		AddrIndex(1).
+		CallGoFuncv(println, 2, 2).
+		EndStmt(nil, &stmtState{rhsBase: 0}).
+		Resolve()
+
+	codeGen := code.(*Code).String()
+	if codeGen != codeExp {
+		fmt.Println(codeGen)
+		t.Fatal("TestBasic failed: codeGen != codeExp")
+	}
+}
+
 func TestGoVar(t *testing.T) {
 	codeExp := `package main
 
@@ -99,7 +145,7 @@ func main() {
 		t.Fatal("FindVar failed:", y)
 	}
 
-	code := NewBuilder("main", nil, nil).
+	code := NewBuilder("main", nil, nil).Interface().
 		Push(5).
 		Push(6).
 		StoreGoVar(y).
@@ -116,10 +162,21 @@ func main() {
 		EndStmt(nil, &stmtState{rhsBase: 0}).
 		Resolve()
 
-	codeGen := code.String()
+	codeGen := code.(*Code).String()
 	if codeGen != codeExp {
 		fmt.Println(codeGen)
 		t.Fatal("TestGoVar failed: codeGen != codeExp")
+	}
+}
+
+// -----------------------------------------------------------------------------
+
+func TestReserved(t *testing.T) {
+	code := NewBuilder("main", nil, nil)
+	off := code.Reserve()
+	code.ReservedAsPush(off, 123)
+	if !reflect.DeepEqual(code.reserveds[off].Expr.(*ast.BasicLit), IntConst(123)) {
+		t.Fatal("TestReserved failed: reserveds is not set to", 123)
 	}
 }
 

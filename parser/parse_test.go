@@ -17,13 +17,15 @@
 package parser
 
 import (
+	"bytes"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
-	"github.com/qiniu/goplus/ast"
-	"github.com/qiniu/goplus/ast/asttest"
-	"github.com/qiniu/goplus/token"
+	"github.com/goplus/gop/ast"
+	"github.com/goplus/gop/ast/asttest"
+	"github.com/goplus/gop/token"
 	"github.com/qiniu/x/log"
 )
 
@@ -89,7 +91,8 @@ func TestParseNoPackageAndGlobalCode(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-var fsTest3 = asttest.NewSingleFileFS("/foo", "bar.gop", `package bar; import "io"
+
+const script3 = `package bar; import "io"
 func New() (*Bar, error) {
 	return nil, io.EOF
 }
@@ -97,16 +100,17 @@ func New() (*Bar, error) {
 bar, err := New()
 if err != nil {
 	log.Println(err)
-}`)
+}`
 
-func TestParseGopFiles(t *testing.T) {
+func TestParse(t *testing.T) {
 	fset := token.NewFileSet()
-	local = fsTest3
+	local = asttest.NewSingleFileFS("/foo", "bar.gop", script3)
 	defer func() {
 		local = localFS{}
 	}()
-	// test parse directory
-	pkgs, err := ParseGopFiles(fset, "/foo", true, 0)
+
+	// test parse file
+	pkgs, err := Parse(fset, "/foo/bar.gop", nil, 0)
 	if err != nil {
 		t.Error("parse err!", err)
 		return
@@ -124,19 +128,21 @@ func TestParseGopFiles(t *testing.T) {
 	if !checkFSTest(file, []string{`"io"`}, []string{"init", "New"}) {
 		t.Error("file check file")
 	}
+}
 
-	// test parse file
-	pkgs, err = ParseGopFiles(fset, "/foo/bar.gop", false, 0)
+func doTestParse(t *testing.T, src interface{}) {
+	fset := token.NewFileSet()
+	pkgs, err := Parse(fset, "/foo/bar.gop", src, 0)
 	if err != nil {
 		t.Error("parse err!", err)
 		return
 	}
-	pkg, ok = pkgs["bar"]
+	pkg, ok := pkgs["bar"]
 	if ok != true {
 		t.Error("pkg not found")
 		return
 	}
-	file, ok = pkg.Files["/foo/bar.gop"]
+	file, ok := pkg.Files["/foo/bar.gop"]
 	if ok != true {
 		t.Error("file not found")
 		return
@@ -144,8 +150,14 @@ func TestParseGopFiles(t *testing.T) {
 	if !checkFSTest(file, []string{`"io"`}, []string{"init", "New"}) {
 		t.Error("file check file")
 	}
-
 }
+
+func TestParse2(t *testing.T) {
+	doTestParse(t, script3)
+	doTestParse(t, bytes.NewBufferString(script3))
+	doTestParse(t, strings.NewReader(script3))
+}
+
 func checkFSTest(file *ast.File, targetImport []string, targetFuncDecl []string) (pass bool) {
 	var foundImport, foundFunc int
 	for _, decl := range file.Decls {

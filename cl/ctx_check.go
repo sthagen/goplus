@@ -19,13 +19,22 @@ package cl
 import (
 	"reflect"
 
-	"github.com/qiniu/goplus/ast"
-	"github.com/qiniu/goplus/exec.spec"
-	"github.com/qiniu/goplus/token"
+	"github.com/goplus/gop/ast"
+	"github.com/goplus/gop/exec.spec"
+	"github.com/goplus/gop/token"
 	"github.com/qiniu/x/log"
 )
 
 // -----------------------------------------------------------------------------
+
+// Debug only
+func Debug(pkg *Package) {
+	isLower("")
+	if _, v, ok := pkg.Find("main"); ok {
+		fn := v.(*funcDecl)
+		isNoExecCtx(fn.ctx, fn.body)
+	}
+}
 
 func newBlockCtxWithFlag(parent *blockCtx) *blockCtx {
 	ctx := newNormBlockCtx(parent)
@@ -67,6 +76,10 @@ func isNoExecCtxStmt(ctx *blockCtx, stmt ast.Stmt) bool {
 		return isNoExecCtxExpr(ctx, v.X)
 	case *ast.BranchStmt:
 		return true
+	case *ast.LabeledStmt:
+		return true
+	case *ast.DeferStmt:
+		return isNoExecCtxCallExpr(ctx, v.Call)
 	default:
 		log.Panicln("isNoExecCtxStmt failed: unknown -", reflect.TypeOf(v))
 	}
@@ -103,6 +116,8 @@ func isNoExecCtxExpr(ctx *blockCtx, expr ast.Expr) bool {
 		return isNoExecCtxListComprehensionExpr(ctx, v)
 	case *ast.MapComprehensionExpr:
 		return isNoExecCtxMapComprehensionExpr(ctx, v)
+	case *ast.ArrayType:
+		return true
 	case *ast.Ellipsis:
 		return true
 	case *ast.KeyValueExpr:
@@ -330,28 +345,37 @@ func isNoExecCtxAssignStmt(ctx *blockCtx, expr *ast.AssignStmt) bool {
 	return true
 }
 
-func isNoExecCtxExprLHS(ctx *blockCtx, expr ast.Expr, mode compleMode) bool {
+func isNoExecCtxExprLHS(ctx *blockCtx, expr ast.Expr, mode compileMode) bool {
 	switch v := expr.(type) {
 	case *ast.Ident:
 		return isNoExecCtxIdentLHS(ctx, v.Name, mode)
 	case *ast.IndexExpr:
 		return isNoExecCtxIndexExprLHS(ctx, v, mode)
+	case *ast.SelectorExpr:
+		return isNoExecCtxSelectorExprLHS(ctx, v, mode)
 	default:
 		log.Panicln("isNoExecCtxExprLHS failed: unknown -", reflect.TypeOf(v))
 	}
 	return true
 }
 
-func isNoExecCtxIndexExprLHS(ctx *blockCtx, v *ast.IndexExpr, mode compleMode) bool {
+func isNoExecCtxIndexExprLHS(ctx *blockCtx, v *ast.IndexExpr, mode compileMode) bool {
 	if noExecCtx := isNoExecCtxExpr(ctx, v.X); !noExecCtx {
 		return false
 	}
 	return isNoExecCtxExpr(ctx, v.Index)
 }
 
-func isNoExecCtxIdentLHS(ctx *blockCtx, name string, mode compleMode) bool {
+func isNoExecCtxIdentLHS(ctx *blockCtx, name string, mode compileMode) bool {
 	if mode == lhsDefine && !ctx.exists(name) {
 		ctx.insertVar(name, exec.TyEmptyInterface, true)
+	}
+	return true
+}
+
+func isNoExecCtxSelectorExprLHS(ctx *blockCtx, v *ast.SelectorExpr, mode compileMode) bool {
+	if noExecCtx := isNoExecCtxExpr(ctx, v.X); !noExecCtx {
+		return false
 	}
 	return true
 }

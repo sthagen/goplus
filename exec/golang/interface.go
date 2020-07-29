@@ -19,8 +19,8 @@ package golang
 import (
 	"reflect"
 
-	"github.com/qiniu/goplus/exec.spec"
-	"github.com/qiniu/goplus/exec/bytecode"
+	"github.com/goplus/gop/exec.spec"
+	"github.com/goplus/gop/exec/bytecode"
 	"github.com/qiniu/x/errors"
 )
 
@@ -163,6 +163,12 @@ func (p *iBuilder) ErrWrap(nret int, retErr exec.Var, frame *errors.Frame, narg 
 // ForPhrase instr
 func (p *iBuilder) ForPhrase(f exec.ForPhrase, key, val exec.Var, hasExecCtx ...bool) exec.Builder {
 	((*Builder)(p)).ForPhrase(f.(*ForPhrase), toVar(key), toVar(val), hasExecCtx...)
+	return p
+}
+
+// Defer instr
+func (p *iBuilder) Defer() exec.Builder {
+	((*Builder)(p)).Defer()
 	return p
 }
 
@@ -376,6 +382,12 @@ func (p *iBuilder) Index(idx int) exec.Builder {
 	return p
 }
 
+// AddrIndex instr
+func (p *iBuilder) AddrIndex(idx int) exec.Builder {
+	((*Builder)(p)).AddrIndex(idx)
+	return p
+}
+
 // SetIndex instr
 func (p *iBuilder) SetIndex(idx int) exec.Builder {
 	((*Builder)(p)).SetIndex(idx)
@@ -441,6 +453,18 @@ func (p *iBuilder) GetPackage() exec.Package {
 // Resolve resolves all unresolved labels/functions/consts/etc.
 func (p *iBuilder) Resolve() exec.Code {
 	return ((*Builder)(p)).Resolve()
+}
+
+// DefineBlock
+func (p *iBuilder) DefineBlock() exec.Builder {
+	((*Builder)(p)).DefineBlock()
+	return p
+}
+
+// EndBlock
+func (p *iBuilder) EndBlock() exec.Builder {
+	((*Builder)(p)).EndBlock()
+	return p
 }
 
 // -----------------------------------------------------------------------------

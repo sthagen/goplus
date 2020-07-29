@@ -19,7 +19,7 @@ package bytecode
 import (
 	"reflect"
 
-	"github.com/qiniu/goplus/exec.spec"
+	"github.com/goplus/gop/exec.spec"
 	"github.com/qiniu/x/log"
 )
 
@@ -129,6 +129,16 @@ func execGoBuiltin(i Instr, p *Context) {
 	case GobCap:
 		v := reflect.ValueOf(p.data[n-1])
 		p.data[n-1] = reflect.Indirect(v).Cap()
+	case GobCopy:
+		n := len(p.data)
+		src := reflect.ValueOf(p.data[n-1])
+		dst := reflect.ValueOf(p.data[n-2])
+		p.Ret(2, reflect.Copy(dst, src))
+	case GobDelete:
+		key := reflect.ValueOf(p.data[n-1])
+		v := reflect.ValueOf(p.data[n-2])
+		v.SetMapIndex(key, reflect.Value{})
+		p.PopN(2)
 	default:
 		log.Panicln("execGoBuiltin: todo -", i)
 	}
@@ -147,17 +157,17 @@ func getParentCtx(p *Context, idx tAddress) *varScope {
 }
 
 // GetVar func.
-func (p *Context) GetVar(x *Var) interface{} {
+func (ctx *Context) GetVar(x *Var) interface{} {
 	if x.isGlobal() {
-		return p.getVar(x.idx)
+		return ctx.getVar(x.idx)
 	}
 	panic("variable not defined, or not a global variable")
 }
 
 // SetVar func.
-func (p *Context) SetVar(x *Var, v interface{}) {
+func (ctx *Context) SetVar(x *Var, v interface{}) {
 	if x.isGlobal() {
-		p.setVar(x.idx, v)
+		ctx.setVar(x.idx, v)
 		return
 	}
 	panic("variable not defined, or not a global variable")
@@ -309,8 +319,8 @@ func newBlockCtx(nestDepth uint32, parent *varManager) *blockCtx {
 
 // -----------------------------------------------------------------------------
 
-func (p *Context) getNestDepth() (nestDepth uint32) {
-	vs := &p.varScope
+func (ctx *Context) getNestDepth() (nestDepth uint32) {
+	vs := &ctx.varScope
 	for {
 		if vs = vs.parent; vs == nil {
 			return

@@ -23,7 +23,7 @@ import (
 	"reflect"
 	"strconv"
 
-	"github.com/qiniu/goplus/exec.spec"
+	"github.com/goplus/gop/exec.spec"
 )
 
 // -----------------------------------------------------------------------------
@@ -37,9 +37,13 @@ const (
 	bitsFuncvArity = 10
 	bitsVarScope   = 6
 	bitsAssignOp   = 4
+	bitsIndexOp    = 2
 
 	bitsOpShift = bitsInstr - bitsOp
 	bitsOperand = (1 << bitsOpShift) - 1
+
+	bitsOpIndexShift   = bitsInstr - (bitsOp + bitsIndexOp)
+	bitsOpIndexOperand = (1 << bitsOpIndexShift) - 1
 
 	bitsOpInt        = bitsOp + bitsIntKind
 	bitsOpIntShift   = bitsInstr - bitsOpInt
@@ -77,7 +81,7 @@ const (
 	opPushUint      = 4  // intKind(3) intVal(23)
 	opPushValSpec   = 5  // valSpec(26) - false=0, true=1
 	opPushConstR    = 6  // idx(26)
-	opIndex         = 7  // set(1) idx(25)
+	opIndex         = 7  // indexOp(2) idx(24)
 	opMake          = 8  // funvArity(10) type(16)
 	opAppend        = 9  // arity(26)
 	opBuiltinOp     = 10 // reserved(16) kind(5) builtinOp(5)
@@ -114,6 +118,7 @@ const (
 	opGoBuiltin     = 41 // op(26)
 	opErrWrap       = 42 // idx(26)
 	opWrapIfErr     = 43 // reserved(2) offset(24)
+	opDefer         = 44
 )
 
 const (
@@ -122,7 +127,10 @@ const (
 	iPushTrue       = (opPushValSpec << bitsOpShift) | 1
 	iPushNil        = (opPushValSpec << bitsOpShift) | 2
 	iPushUnresolved = (opInvalid << bitsOpShift)
-	iReturn         = (opReturn << bitsOpShift) | (0xffffffff & bitsOperand)
+
+	iReturn   = (opReturn << bitsOpShift) | (0xffffffff & bitsOperand)
+	iBreak    = (opReturn << bitsOpShift) | (0xfffffffe & bitsOperand)
+	iContinue = (opReturn << bitsOpShift) | (0xfffffffd & bitsOperand)
 )
 
 const (
@@ -159,7 +167,7 @@ var instrInfos = []InstrInfo{
 	opPushUint:      {"pushUint", "intKind", "intVal", (3 << 8) | 23},     // intKind(3) intVal(23)
 	opPushValSpec:   {"pushValSpec", "", "valSpec", 26},                   // valSpec(26) - false=0, true=1
 	opPushConstR:    {"pushConstR", "", "idx", 26},                        // idx(26)
-	opIndex:         {"index", "set", "idx", (1 << 8) | 25},               // set(1) idx(25)
+	opIndex:         {"index", "indexOp", "idx", (2 << 8) | 24},           // indexOp(2) idx(24)
 	opMake:          {"make", "funvArity", "type", (10 << 8) | 16},        // funvArity(10) type(16)
 	opAppend:        {"append", "", "arity", 26},                          // arity(26)
 	opBuiltinOp:     {"builtinOp", "kind", "op", (21 << 8) | 5},           // reserved(16) kind(5) builtinOp(5)
@@ -196,6 +204,7 @@ var instrInfos = []InstrInfo{
 	opGoBuiltin:     {"goBuiltin", "", "op", 26},                          // op(26)
 	opErrWrap:       {"errWrap", "", "idx", 26},                           // idx(26)
 	opWrapIfErr:     {"wrapIfErr", "", "offset", 26},                      // reserved(2) offset(24)
+	opDefer:         {"defer", "", "", 0},
 }
 
 // -----------------------------------------------------------------------------
@@ -226,8 +235,13 @@ func (p *Code) Len() int {
 
 // Dump dumps code.
 func (p *Code) Dump(w io.Writer) {
+	DumpCodeBlock(w, p.data...)
+}
+
+// DumpCodeBlock dumps a code block.
+func DumpCodeBlock(w io.Writer, data ...Instr) {
 	b := bufio.NewWriter(w)
-	for _, i := range p.data {
+	for _, i := range data {
 		v, p1, p2 := DecodeInstr(i)
 		b.WriteString(v.Name)
 		b.WriteByte(' ')

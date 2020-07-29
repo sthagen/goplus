@@ -5,14 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qiniu/goplus/ast"
-	"github.com/qiniu/goplus/cl"
-	"github.com/qiniu/goplus/parser"
-	"github.com/qiniu/goplus/token"
+	"github.com/goplus/gop/ast"
+	"github.com/goplus/gop/cl"
+	"github.com/goplus/gop/parser"
+	"github.com/goplus/gop/token"
 	"github.com/qiniu/x/log"
 
-	exec "github.com/qiniu/goplus/exec/bytecode"
-	_ "github.com/qiniu/goplus/lib" // libraries
+	exec "github.com/goplus/gop/exec/bytecode"
+	_ "github.com/goplus/gop/lib" // libraries
 )
 
 // -----------------------------------------------------------------------------
@@ -48,9 +48,7 @@ func testFrom(t *testing.T, pkgDir, sel, exclude string) {
 		t.Fatal("Compile failed:", err)
 	}
 	code := b.Resolve()
-
-	ctx := exec.NewContext(code)
-	ctx.Exec(0, code.Len())
+	exec.NewContext(code).Run()
 }
 
 // FromTestdata - run test cases from a directory

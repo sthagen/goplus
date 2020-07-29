@@ -24,8 +24,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/qiniu/goplus/exec.spec"
-	"github.com/qiniu/goplus/lib/builtin"
+	"github.com/goplus/gop/exec.spec"
+	"github.com/goplus/gop/lib/builtin"
 	"github.com/qiniu/x/log"
 )
 
@@ -115,7 +115,7 @@ func ComplexConst(v complex128) ast.Expr {
 func NewGopkgType(p *Builder, pkgPath, typName string) ast.Expr {
 	typ := p.GoSymIdent(pkgPath, typName)
 	args := []ast.Expr{typ}
-	return &ast.CallExpr{Fun: newIden, Args: args}
+	return &ast.CallExpr{Fun: newIdent, Args: args}
 }
 
 func valBySetString(p *Builder, typ reflect.Type, x ast.Expr, args ...ast.Expr) ast.Expr {
@@ -187,7 +187,7 @@ func BigFloatConst(p *Builder, v *big.Float) ast.Expr {
 // Const instr
 func Const(p *Builder, val interface{}) ast.Expr {
 	if val == nil {
-		return nilIden
+		return nilIdent
 	}
 	v := reflect.ValueOf(val)
 	kind := v.Kind()
@@ -366,7 +366,14 @@ func (p *Builder) Call(narg int, ellipsis bool, args ...ast.Expr) *Builder {
 	if ellipsis {
 		expr.Ellipsis++
 	}
-	p.rhs.Push(expr)
+	if p.inDefer {
+		p.inDefer = false
+		p.rhs.Push(&ast.DeferStmt{
+			Call: expr,
+		})
+	} else {
+		p.rhs.Push(expr)
+	}
 	return p
 }
 
@@ -427,7 +434,7 @@ func (p *Builder) AddrGoVar(addr exec.GoVarAddr) *Builder {
 
 // Append instr
 func (p *Builder) Append(typ reflect.Type, arity int) *Builder {
-	p.rhs.Push(appendIden)
+	p.rhs.Push(appendIdent)
 	var ellipsis bool
 	if arity == -1 {
 		ellipsis = true
@@ -439,7 +446,7 @@ func (p *Builder) Append(typ reflect.Type, arity int) *Builder {
 
 // Make instr
 func (p *Builder) Make(typ reflect.Type, arity int) *Builder {
-	p.rhs.Push(makeIden)
+	p.rhs.Push(makeIdent)
 	p.Call(arity, false, Type(p, typ))
 	return p
 }
@@ -454,9 +461,6 @@ func (p *Builder) MakeArray(typ reflect.Type, arity int) *Builder {
 	var xExpr ast.Expr = &ast.CompositeLit{
 		Type: typExpr,
 		Elts: elts,
-	}
-	if typ.Kind() == reflect.Array {
-		xExpr = &ast.UnaryExpr{Op: token.AND, X: xExpr}
 	}
 	p.rhs.Ret(arity, xExpr)
 	return p
@@ -495,6 +499,15 @@ func (p *Builder) SetMapIndex() *Builder {
 // Index instr
 func (p *Builder) Index(idx int) *Builder {
 	p.rhs.Push(IndexWith(p, idx))
+	return p
+}
+
+// AddrIndex instr
+func (p *Builder) AddrIndex(idx int) *Builder {
+	p.rhs.Push(&ast.UnaryExpr{
+		Op: token.AND,
+		X:  IndexWith(p, idx),
+	})
 	return p
 }
 

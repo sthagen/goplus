@@ -3,7 +3,7 @@ package bytecode
 import (
 	"reflect"
 
-	"github.com/qiniu/goplus/exec.spec"
+	"github.com/goplus/gop/exec.spec"
 	"github.com/qiniu/x/errors"
 	"github.com/qiniu/x/log"
 )
@@ -124,6 +124,12 @@ func (p *iBuilder) CaseNE(l exec.Label, arity int) exec.Builder {
 // Default instr
 func (p *iBuilder) Default() exec.Builder {
 	((*Builder)(p)).Default()
+	return p
+}
+
+// Default instr
+func (p *iBuilder) Defer() exec.Builder {
+	((*Builder)(p)).Defer()
 	return p
 }
 
@@ -361,6 +367,12 @@ func (p *iBuilder) Index(idx int) exec.Builder {
 	return p
 }
 
+// AddrIndex instr
+func (p *iBuilder) AddrIndex(idx int) exec.Builder {
+	((*Builder)(p)).AddrIndex(idx)
+	return p
+}
+
 // SetIndex instr
 func (p *iBuilder) SetIndex(idx int) exec.Builder {
 	((*Builder)(p)).SetIndex(idx)
@@ -425,6 +437,16 @@ func (p *iBuilder) GetPackage() exec.Package {
 // Resolve resolves all unresolved labels/functions/consts/etc.
 func (p *iBuilder) Resolve() exec.Code {
 	return ((*Builder)(p)).Resolve()
+}
+
+// DefineBlock
+func (p *iBuilder) DefineBlock() exec.Builder {
+	return p
+}
+
+// EndBlock
+func (p *iBuilder) EndBlock() exec.Builder {
+	return p
 }
 
 // -----------------------------------------------------------------------------

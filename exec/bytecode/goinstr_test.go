@@ -53,7 +53,7 @@ func TestLargeArray(t *testing.T) {
 
 	ctx := NewContext(code)
 	ctx.Exec(0, code.Len())
-	if v := checkPop(ctx); !reflect.DeepEqual(v, &ret) {
+	if v := checkPop(ctx); !reflect.DeepEqual(v, ret) {
 		t.Fatal("32 times(1024) mkslice != `32` times(1024) slice, ret =", v)
 	}
 }
@@ -75,20 +75,30 @@ func TestMap(t *testing.T) {
 }
 
 func TestMapIndex(t *testing.T) {
+	m := NewVar(reflect.MapOf(TyString, TyFloat64), "")
 	code := newBuilder().
+		DefineVar(m).
 		Push("Hello").
 		Push(3.2).
 		Push("xsw").
 		Push(1.0).
 		MakeMap(reflect.MapOf(TyString, TyFloat64), 2).
+		StoreVar(m).
+		LoadVar(m).
+		Push("go+").
+		MapIndex().
+		LoadVar(m).
 		Push("xsw").
 		MapIndex().
 		Resolve()
 
 	ctx := NewContext(code)
 	ctx.Exec(0, code.Len())
-	if v := checkPop(ctx); v != 1.0 {
+	if v := ctx.Get(-1); v != 1.0 {
 		t.Fatal("{`Hello`: 3.2, `xsw`: 1.0}[`xsw`] != 1.0, ret =", v)
+	}
+	if v := ctx.Get(-2); v != 0.0 {
+		t.Fatal("{`Hello`: 3.2, `xsw`: 1.0}[`go+`] != 1.0, ret =", v)
 	}
 }
 
@@ -347,6 +357,53 @@ func TestIndex2(t *testing.T) {
 	}
 }
 
+func TestAddrIndex(t *testing.T) {
+	a := NewVar(reflect.SliceOf(TyFloat64), "")
+	code := newBuilder().
+		DefineVar(a).
+		Push(0.7).
+		Push(3.2).
+		Push(1.2).
+		Push(2.4).
+		MakeArray(reflect.SliceOf(TyFloat64), 3).
+		StoreVar(a).
+		LoadVar(a).
+		Push(2).
+		SetIndex(-1).
+		LoadVar(a).
+		AddrIndex(2).
+		AddrOp(Float64, OpAddrVal).
+		Resolve()
+
+	ctx := NewContext(code)
+	ctx.Exec(0, code.Len())
+	if v := checkPop(ctx); v != 0.7 {
+		t.Fatal("[3.2, 1.2, 0.7], ret:", v)
+	}
+}
+
+func TestAddrLargeIndex(t *testing.T) {
+	a := NewVar(reflect.SliceOf(TyFloat64), "")
+	code := newBuilder().
+		DefineVar(a).
+		Push(bitsOpIndexOperand+1).
+		Make(reflect.SliceOf(TyFloat64), 1).
+		StoreVar(a).
+		Push(1.7).
+		LoadVar(a).
+		SetIndex(bitsOpIndexOperand).
+		LoadVar(a).
+		AddrIndex(bitsOpIndexOperand).
+		AddrOp(Float64, OpAddrVal).
+		Resolve()
+
+	ctx := NewContext(code)
+	ctx.Exec(0, code.Len())
+	if v := checkPop(ctx); v != 1.7 {
+		t.Fatal("v != 1.7, ret:", v)
+	}
+}
+
 func TestSetIndex(t *testing.T) {
 	a := NewVar(reflect.SliceOf(TyFloat64), "")
 	code := newBuilder().
@@ -374,14 +431,14 @@ func TestSetLargeIndex(t *testing.T) {
 	a := NewVar(reflect.SliceOf(TyFloat64), "")
 	code := newBuilder().
 		DefineVar(a).
-		Push(setIndexOperand+1).
+		Push(bitsOpIndexOperand+1).
 		Make(reflect.SliceOf(TyFloat64), 1).
 		StoreVar(a).
 		Push(1.7).
 		LoadVar(a).
-		SetIndex(setIndexOperand).
+		SetIndex(bitsOpIndexOperand).
 		LoadVar(a).
-		Index(setIndexOperand).
+		Index(bitsOpIndexOperand).
 		Resolve()
 
 	ctx := NewContext(code)
@@ -612,5 +669,81 @@ func TestTypeCast(t *testing.T) {
 	ctx.Exec(0, code.Len())
 	if v := checkPop(ctx); v != "56" {
 		t.Fatal("`5` `6` add != `56`, ret =", v)
+	}
+}
+
+func TestDelete(t *testing.T) {
+	tyMap := reflect.MapOf(TyString, TyInt)
+	m := NewVar(tyMap, "")
+	code := newBuilder().
+		DefineVar(m).
+		Push("Hello").
+		Push(1).
+		Push("Go+").
+		Push(2).
+		MakeMap(tyMap, 2).
+		StoreVar(m).
+		LoadVar(m).
+		Push("Hello").
+		GoBuiltin(tyMap, GobDelete).
+		LoadVar(m).
+		Resolve()
+
+	ctx := NewContext(code)
+	ctx.Exec(0, code.Len())
+	if v := checkPop(ctx); !reflect.DeepEqual(v, map[string]int{"Go+": 2}) {
+		t.Fatal("expected: {`Go+`: 2}, ret =", v)
+	}
+}
+
+func TestCopy(t *testing.T) {
+	a := NewVar(reflect.SliceOf(TyInt), "")
+	b := NewVar(reflect.SliceOf(TyInt), "")
+	code := newBuilder().
+		DefineVar(a).
+		DefineVar(b).
+		Push(1).
+		Push(2).
+		Push(3).
+		MakeArray(reflect.SliceOf(TyInt), 3).
+		StoreVar(a).
+		Push(11).
+		MakeArray(reflect.SliceOf(TyInt), 1).
+		StoreVar(b).
+		LoadVar(b).
+		LoadVar(a).
+		GoBuiltin(nil, GobCopy).
+		LoadVar(b).
+		Resolve()
+
+	ctx := NewContext(code)
+	ctx.Exec(0, code.Len())
+	arr := ctx.Pop().([]int)
+	n := ctx.Pop().(int)
+	if n != 1 || reflect.DeepEqual(arr, []int{11, 2, 3}) {
+		t.Fatal("copy failed")
+	}
+}
+
+func TestCopy2(t *testing.T) {
+	a := NewVar(reflect.SliceOf(TyByte), "")
+	code := newBuilder().
+		DefineVar(a).
+		Push(byte(96)).
+		Push(byte(97)).
+		MakeArray(reflect.SliceOf(TyByte), 2).
+		StoreVar(a).
+		LoadVar(a).
+		Push("hello").
+		GoBuiltin(nil, GobCopy).
+		LoadVar(a).
+		Resolve()
+
+	ctx := NewContext(code)
+	ctx.Exec(0, code.Len())
+	arr := ctx.Pop().([]byte)
+	n := ctx.Pop().(int)
+	if n != 2 || string(arr) != "he" {
+		t.Fatal("copy failed")
 	}
 }

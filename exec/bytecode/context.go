@@ -19,76 +19,9 @@ package bytecode
 import (
 	"time"
 
-	"github.com/qiniu/goplus/exec.spec"
+	"github.com/goplus/gop/exec.spec"
 	"github.com/qiniu/x/log"
 )
-
-// -----------------------------------------------------------------------------
-
-const defaultStkSize = 64
-
-// A Stack represents a FILO container.
-type Stack struct {
-	data []interface{}
-}
-
-// NewStack creates a Stack instance.
-func NewStack() (p *Stack) {
-	return &Stack{data: make([]interface{}, 0, defaultStkSize)}
-}
-
-// Init initializes this Stack object.
-func (p *Stack) Init() {
-	p.data = make([]interface{}, 0, defaultStkSize)
-}
-
-// Get returns the value at specified index.
-func (p *Stack) Get(idx int) interface{} {
-	return p.data[len(p.data)+idx]
-}
-
-// Set returns the value at specified index.
-func (p *Stack) Set(idx int, v interface{}) {
-	p.data[len(p.data)+idx] = v
-}
-
-// GetArgs returns all arguments of a function.
-func (p *Stack) GetArgs(arity int) []interface{} {
-	return p.data[len(p.data)-arity:]
-}
-
-// Ret pops n values from this stack, and then pushes results.
-func (p *Stack) Ret(arity int, results ...interface{}) {
-	p.data = append(p.data[:len(p.data)-arity], results...)
-}
-
-// Push pushes a value into this stack.
-func (p *Stack) Push(v interface{}) {
-	p.data = append(p.data, v)
-}
-
-// PopN pops n elements.
-func (p *Stack) PopN(n int) {
-	p.data = p.data[:len(p.data)-n]
-}
-
-// Pop pops a value from this stack.
-func (p *Stack) Pop() interface{} {
-	n := len(p.data)
-	v := p.data[n-1]
-	p.data = p.data[:n-1]
-	return v
-}
-
-// Len returns count of stack elements.
-func (p *Stack) Len() int {
-	return len(p.data)
-}
-
-// SetLen sets count of stack elements.
-func (p *Stack) SetLen(base int) {
-	p.data = p.data[:base]
-}
 
 // -----------------------------------------------------------------------------
 
@@ -101,9 +34,10 @@ type varScope struct {
 type Context struct {
 	Stack
 	varScope
-	code *Code
-	ip   int
-	base int
+	code   *Code
+	defers *theDefer
+	ip     int
+	base   int
 }
 
 func newSimpleContext(data []interface{}) *Context {
@@ -121,6 +55,16 @@ func NewContext(in exec.Code) *Context {
 		p.vars = code.makeVarsContext(p)
 	}
 	return p
+}
+
+// CloneSetVarScope clone already set varScope to new context
+func (ctx *Context) CloneSetVarScope(new *Context) {
+	if !ctx.vars.IsValid() {
+		return
+	}
+	for i := 0; i < ctx.vars.NumField(); i++ {
+		new.varScope.setVar(uint32(i), ctx.varScope.getVar(uint32(i)))
+	}
 }
 
 type savedScopeCtx struct {
@@ -157,8 +101,14 @@ func (ctx *Context) getScope(local bool) *varScope {
 	return scope
 }
 
+// Run executes the code.
+func (ctx *Context) Run() {
+	defer ctx.execDefers()
+	ctx.Exec(0, ctx.code.Len())
+}
+
 // Exec executes a code block from ip to ipEnd.
-func (ctx *Context) Exec(ip, ipEnd int) {
+func (ctx *Context) Exec(ip, ipEnd int) (currentIP int) {
 	const allowProfile = true
 	var lastInstr Instr
 	var start time.Time
@@ -204,7 +154,10 @@ func (ctx *Context) Exec(ip, ipEnd int) {
 		case opCallGoFuncv:
 			execGoFuncv(i, ctx)
 		case opReturn:
-			if i != iReturn {
+			currentIP = ctx.ip
+			if i == iBreak || i == iContinue || i == iReturn {
+				ctx.ip = int(i)
+			} else {
 				ctx.ip = ipReturnN
 			}
 			goto finished
@@ -224,11 +177,14 @@ finished:
 			instrProfile(lastInstr, time.Since(start))
 		}
 	}
+	return
 }
 
 var _execTable = [...]func(i Instr, p *Context){
 	opCallGoFunc:    execGoFunc,
 	opCallGoFuncv:   execGoFuncv,
+	opCallFunc:      execFunc,
+	opCallFuncv:     execFuncv,
 	opPushInt:       execPushInt,
 	opPushUint:      execPushUint,
 	opPushValSpec:   execPushValSpec,
@@ -267,6 +223,7 @@ var _execTable = [...]func(i Instr, p *Context){
 	opGoBuiltin:     execGoBuiltin,
 	opErrWrap:       execErrWrap,
 	opWrapIfErr:     execWrapIfErr,
+	opDefer:         execDefer,
 }
 
 var execTable []func(i Instr, p *Context)

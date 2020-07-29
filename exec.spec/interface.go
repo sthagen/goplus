@@ -54,6 +54,12 @@ func (p Reserved) Push(b Builder, val interface{}) {
 	b.ReservedAsPush(p, val)
 }
 
+// BreakAsReturn - todo
+const BreakAsReturn = -2
+
+// ContinueAsReturn - todo
+const ContinueAsReturn = -3
+
 // ForPhrase represents a for range phrase.
 type ForPhrase interface {
 }
@@ -244,6 +250,15 @@ type Builder interface {
 	// CallGoFuncv instr
 	CallGoFuncv(fun GoFuncvAddr, nexpr, arity int) Builder
 
+	// Append instr
+	Append(typ reflect.Type, arity int) Builder
+
+	// GoBuiltin instr
+	GoBuiltin(typ reflect.Type, op GoBuiltin) Builder
+
+	// Defer instr
+	Defer() Builder
+
 	// DefineFunc instr
 	DefineFunc(fun FuncInfo) Builder
 
@@ -286,9 +301,6 @@ type Builder interface {
 	// AddrOp instr
 	AddrOp(kind Kind, op AddrOperator) Builder
 
-	// Append instr
-	Append(typ reflect.Type, arity int) Builder
-
 	// MakeArray instr
 	MakeArray(typ reflect.Type, arity int) Builder
 
@@ -307,6 +319,9 @@ type Builder interface {
 	// Index instr
 	Index(idx int) Builder
 
+	// AddrIndex instr
+	AddrIndex(idx int) Builder
+
 	// SetIndex instr
 	SetIndex(idx int) Builder
 
@@ -318,9 +333,6 @@ type Builder interface {
 
 	// TypeCast instr
 	TypeCast(from, to reflect.Type) Builder
-
-	// GoBuiltin instr
-	GoBuiltin(typ reflect.Type, op GoBuiltin) Builder
 
 	// Zero instr
 	Zero(typ reflect.Type) Builder
@@ -342,6 +354,12 @@ type Builder interface {
 
 	// Resolve resolves all unresolved labels/functions/consts/etc.
 	Resolve() Code
+
+	// DefineBlock instr
+	DefineBlock() Builder
+
+	// EndBlock instr
+	EndBlock() Builder
 }
 
 // Package represents a Go+ package.

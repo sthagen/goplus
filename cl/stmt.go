@@ -19,9 +19,9 @@ package cl
 import (
 	"reflect"
 
-	"github.com/qiniu/goplus/ast"
-	"github.com/qiniu/goplus/exec.spec"
-	"github.com/qiniu/goplus/token"
+	"github.com/goplus/gop/ast"
+	"github.com/goplus/gop/exec.spec"
+	"github.com/goplus/gop/token"
 	"github.com/qiniu/x/log"
 )
 
@@ -35,6 +35,12 @@ func compileBlockStmtWithout(ctx *blockCtx, body *ast.BlockStmt) {
 	for _, stmt := range body.List {
 		compileStmt(ctx, stmt)
 	}
+}
+
+func compileNewBlock(ctx *blockCtx, block *ast.BlockStmt) {
+	ctx.out.DefineBlock()
+	compileBlockStmtWith(ctx, block)
+	ctx.out.EndBlock()
 }
 
 func compileBodyWith(ctx *blockCtx, body []ast.Stmt) {
@@ -62,13 +68,19 @@ func compileStmt(ctx *blockCtx, stmt ast.Stmt) {
 	case *ast.ForStmt:
 		compileForStmt(ctx, v)
 	case *ast.BlockStmt:
-		compileBlockStmtWith(ctx, v)
+		compileNewBlock(ctx, v)
 	case *ast.ReturnStmt:
 		compileReturnStmt(ctx, v)
 	case *ast.IncDecStmt:
 		compileIncDecStmt(ctx, v)
 	case *ast.BranchStmt:
 		compileBranchStmt(ctx, v)
+	case *ast.LabeledStmt:
+		compileLabeledStmt(ctx, v)
+	case *ast.DeferStmt:
+		compileDeferStmt(ctx, v)
+	case *ast.EmptyStmt:
+		// do nothing
 	default:
 		log.Panicln("compileStmt failed: unknown -", reflect.TypeOf(v))
 	}
@@ -141,33 +153,94 @@ func toIdent(e ast.Expr) *ast.Ident {
 }
 
 func compileForStmt(ctx *blockCtx, v *ast.ForStmt) {
-	if v.Init != nil {
-		ctx = newNormBlockCtx(ctx)
-		compileStmt(ctx, v.Init)
+	if init := v.Init; init != nil {
+		v.Init = nil
+		block := &ast.BlockStmt{List: []ast.Stmt{init, v}}
+		compileNewBlock(ctx, block)
+		return
 	}
 	out := ctx.out
+	start := ctx.NewLabel("")
+	post := ctx.NewLabel("")
 	done := ctx.NewLabel("")
-	label := ctx.NewLabel("")
-	out.Label(label)
-
+	labelName := ""
+	if ctx.currentLabel != nil && ctx.currentLabel.Stmt == v {
+		labelName = ctx.currentLabel.Label.Name
+	}
+	ctx.nextFlow(post, done, labelName)
+	defer func() {
+		ctx.currentFlow = ctx.currentFlow.parent
+	}()
+	out.Label(start)
 	compileExpr(ctx, v.Cond)()
 	checkBool(ctx.infer.Pop())
 	out.JmpIf(0, done)
-
 	noExecCtx := isNoExecCtx(ctx, v.Body)
 	ctx = newNormBlockCtxEx(ctx, noExecCtx)
 	compileBlockStmtWith(ctx, v.Body)
+	out.Jmp(post)
+	out.Label(post)
 	if v.Post != nil {
 		compileStmt(ctx, v.Post)
 	}
-	out.Jmp(label)
+	out.Jmp(start)
 	out.Label(done)
 }
 
 func compileBranchStmt(ctx *blockCtx, v *ast.BranchStmt) {
-	if v.Tok == token.FALLTHROUGH {
+	switch v.Tok {
+	case token.FALLTHROUGH:
 		log.Panicln("fallthrough statement out of place")
+	case token.GOTO:
+		if v.Label == nil {
+			log.Panicln("label not defined")
+		}
+		ctx.out.Jmp(ctx.requireLabel(v.Label.Name))
+	case token.BREAK:
+		var labelName string
+		if v.Label != nil {
+			labelName = v.Label.Name
+		}
+		label, rangeFor := ctx.getBreakLabel(labelName)
+		if label != nil {
+			ctx.out.Jmp(label)
+			return
+		}
+		if rangeFor {
+			ctx.out.Return(exec.BreakAsReturn)
+			return
+		}
+		log.Panicln("break statement out of for/switch/select statements")
+	case token.CONTINUE:
+		var labelName string
+		if v.Label != nil {
+			labelName = v.Label.Name
+		}
+		label, rangeFor := ctx.getContinueLabel(labelName)
+		if label != nil {
+			ctx.out.Jmp(label)
+			return
+		}
+		if rangeFor {
+			ctx.out.Return(exec.ContinueAsReturn)
+			return
+		}
+		log.Panicln("continue statement out of for statements")
 	}
+}
+
+func compileLabeledStmt(ctx *blockCtx, v *ast.LabeledStmt) {
+	label := ctx.defineLabel(v.Label.Name)
+	// make sure all labels in golang code  will be used
+	// TODO improvement exec/bytecode not to jump if delta==0
+	ctx.out.Jmp(label)
+	ctx.out.Label(label)
+	ctx.currentLabel = v
+	compileStmt(ctx, v.Stmt)
+}
+
+func compileDeferStmt(ctx *blockCtx, v *ast.DeferStmt) {
+	compileCallExpr(ctx, v.Call, true)()
 }
 
 func compileSwitchStmt(ctx *blockCtx, v *ast.SwitchStmt) {
@@ -181,6 +254,14 @@ func compileSwitchStmt(ctx *blockCtx, v *ast.SwitchStmt) {
 	}
 	out := ctx.out
 	done := ctx.NewLabel("")
+	labelName := ""
+	if ctx.currentLabel != nil && ctx.currentLabel.Stmt == v {
+		labelName = ctx.currentLabel.Label.Name
+	}
+	ctx.nextFlow(nil, done, labelName)
+	defer func() {
+		ctx.currentFlow = ctx.currentFlow.parent
+	}()
 	hasTag := v.Tag != nil
 	hasCaseClause := false
 	var withoutCheck exec.Label
@@ -319,7 +400,11 @@ func compileIfStmt(ctx *blockCtx, v *ast.IfStmt) {
 	}
 	out.Label(label)
 	if hasElse {
-		compileStmt(ctxIf, v.Else)
+		if ve, ok := v.Else.(*ast.BlockStmt); ok {
+			compileBlockStmtWithout(ctx, ve)
+		} else {
+			compileStmt(ctxIf, v.Else)
+		}
 		out.Label(done)
 	}
 }
