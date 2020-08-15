@@ -102,19 +102,26 @@ type FuncInfo interface {
 	IsUnnamedOut() bool
 }
 
-// JmpCond represents condition of Jmp intruction.
-type JmpCond uint32
+// JmpCondFlag represents condition of Jmp intruction.
+type JmpCondFlag uint32
 
 const (
 	// JcFalse - JmpIfFalse
-	JcFalse JmpCond = 0
+	JcFalse JmpCondFlag = 0
 	// JcTrue - JmpIfTrue
-	JcTrue JmpCond = 1
+	JcTrue JmpCondFlag = 1
 	// JcNil - JmpIfNil
-	JcNil JmpCond = 2
+	JcNil JmpCondFlag = 2
 	// JcNotNil - JmpIfNotNil
-	JcNotNil JmpCond = 3
+	JcNotNil JmpCondFlag = 3
+	// JcNotPopMask - jump but not pop
+	JcNotPopMask JmpCondFlag = 4
 )
+
+// IsNotPop returns to pop condition value or not
+func (v JmpCondFlag) IsNotPop() bool {
+	return v&JcNotPopMask == JcNotPopMask
+}
 
 // SymbolKind represents symbol kind.
 type SymbolKind uint32
@@ -194,7 +201,7 @@ type Builder interface {
 	Jmp(l Label) Builder
 
 	// JmpIf instr
-	JmpIf(cond JmpCond, l Label) Builder
+	JmpIf(cond JmpCondFlag, l Label) Builder
 
 	// CaseNE instr
 	CaseNE(l Label, arity int) Builder
@@ -250,14 +257,14 @@ type Builder interface {
 	// CallGoFuncv instr
 	CallGoFuncv(fun GoFuncvAddr, nexpr, arity int) Builder
 
-	// Append instr
-	Append(typ reflect.Type, arity int) Builder
-
 	// GoBuiltin instr
 	GoBuiltin(typ reflect.Type, op GoBuiltin) Builder
 
 	// Defer instr
 	Defer() Builder
+
+	// Go instr
+	Go() Builder
 
 	// DefineFunc instr
 	DefineFunc(fun FuncInfo) Builder
@@ -298,6 +305,15 @@ type Builder interface {
 	// AddrGoVar instr
 	AddrGoVar(addr GoVarAddr) Builder
 
+	// LoadField instr
+	LoadField(v interface{}, index []int) Builder
+
+	// StoreField instr
+	StoreField(v interface{}, index []int) Builder
+
+	// AddrField instr
+	AddrField(v interface{}, index []int) Builder
+
 	// AddrOp instr
 	AddrOp(kind Kind, op AddrOperator) Builder
 
@@ -309,6 +325,12 @@ type Builder interface {
 
 	// Make instr
 	Make(typ reflect.Type, arity int) Builder
+
+	// Val instr
+	Struct(typ reflect.Type, arity int) Builder
+
+	// Append instr
+	Append(typ reflect.Type, arity int) Builder
 
 	// MapIndex instr
 	MapIndex() Builder
@@ -336,6 +358,9 @@ type Builder interface {
 
 	// Zero instr
 	Zero(typ reflect.Type) Builder
+
+	// New instr
+	New(typ reflect.Type) Builder
 
 	// StartStmt emit a `StartStmt` event.
 	StartStmt(stmt interface{}) interface{}

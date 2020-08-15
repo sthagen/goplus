@@ -131,7 +131,7 @@ func (p *iBuilder) Jmp(l exec.Label) exec.Builder {
 }
 
 // JmpIf instr
-func (p *iBuilder) JmpIf(cond exec.JmpCond, l exec.Label) exec.Builder {
+func (p *iBuilder) JmpIf(cond exec.JmpCondFlag, l exec.Label) exec.Builder {
 	((*Builder)(p)).JmpIf(cond, l.(*Label))
 	return p
 }
@@ -169,6 +169,12 @@ func (p *iBuilder) ForPhrase(f exec.ForPhrase, key, val exec.Var, hasExecCtx ...
 // Defer instr
 func (p *iBuilder) Defer() exec.Builder {
 	((*Builder)(p)).Defer()
+	return p
+}
+
+// Go instr
+func (p *iBuilder) Go() exec.Builder {
+	((*Builder)(p)).Go()
 	return p
 }
 
@@ -334,6 +340,24 @@ func (p *iBuilder) AddrGoVar(addr exec.GoVarAddr) exec.Builder {
 	return p
 }
 
+// LoadField instr
+func (p *iBuilder) LoadField(v interface{}, index []int) exec.Builder {
+	((*Builder)(p)).LoadField(v, index)
+	return p
+}
+
+// AddrField instr
+func (p *iBuilder) AddrField(v interface{}, index []int) exec.Builder {
+	((*Builder)(p)).AddrField(v, index)
+	return p
+}
+
+// StoreField instr
+func (p *iBuilder) StoreField(v interface{}, index []int) exec.Builder {
+	((*Builder)(p)).StoreField(v, index)
+	return p
+}
+
 // AddrOp instr
 func (p *iBuilder) AddrOp(kind exec.Kind, op exec.AddrOperator) exec.Builder {
 	((*Builder)(p)).AddrOp(kind, op)
@@ -394,6 +418,12 @@ func (p *iBuilder) SetIndex(idx int) exec.Builder {
 	return p
 }
 
+// Struct instr
+func (p *iBuilder) Struct(typ reflect.Type, arity int) exec.Builder {
+	((*Builder)(p)).Struct(typ, arity)
+	return p
+}
+
 // Slice instr
 func (p *iBuilder) Slice(i, j int) exec.Builder {
 	((*Builder)(p)).Slice(i, j)
@@ -415,6 +445,12 @@ func (p *iBuilder) TypeCast(from, to reflect.Type) exec.Builder {
 // GoBuiltin instr
 func (p *iBuilder) GoBuiltin(typ reflect.Type, op exec.GoBuiltin) exec.Builder {
 	((*Builder)(p)).GoBuiltin(typ, op)
+	return p
+}
+
+// New instr
+func (p *iBuilder) New(typ reflect.Type) exec.Builder {
+	((*Builder)(p)).New(typ)
 	return p
 }
 
