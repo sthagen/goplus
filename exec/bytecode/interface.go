@@ -138,6 +138,18 @@ func (p *iBuilder) Go() exec.Builder {
 	return ((*Builder)(p)).Go()
 }
 
+// Send instr
+func (p *iBuilder) Send() exec.Builder {
+	((*Builder)(p)).Send()
+	return p
+}
+
+// Recv instr
+func (p *iBuilder) Recv() exec.Builder {
+	((*Builder)(p)).Recv()
+	return p
+}
+
 // WrapIfErr instr
 func (p *iBuilder) WrapIfErr(nret int, l exec.Label) exec.Builder {
 	((*Builder)(p)).WrapIfErr(nret, l.(*Label))
@@ -265,6 +277,12 @@ func (p *iBuilder) Load(idx int32) exec.Builder {
 	return p
 }
 
+// Addr instr
+func (p *iBuilder) Addr(idx int32) exec.Builder {
+	((*Builder)(p)).Addr(idx)
+	return p
+}
+
 // Store instr
 func (p *iBuilder) Store(idx int32) exec.Builder {
 	((*Builder)(p)).Store(idx)
@@ -280,6 +298,12 @@ func (p *iBuilder) EndFunc(fun exec.FuncInfo) exec.Builder {
 // DefineVar defines variables.
 func (p *iBuilder) DefineVar(vars ...exec.Var) exec.Builder {
 	((*Builder)(p)).DefineVars(vars...)
+	return p
+}
+
+// DefineType name string,reflect.Type instr
+func (p *iBuilder) DefineType(typ reflect.Type, name string) exec.Builder {
+	// Nothing todo in bytecode
 	return p
 }
 
@@ -373,8 +397,8 @@ func (p *iBuilder) Make(typ reflect.Type, arity int) exec.Builder {
 }
 
 // MapIndex instr
-func (p *iBuilder) MapIndex() exec.Builder {
-	((*Builder)(p)).MapIndex()
+func (p *iBuilder) MapIndex(twoValue bool) exec.Builder {
+	((*Builder)(p)).MapIndex(twoValue)
 	return p
 }
 

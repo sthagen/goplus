@@ -504,17 +504,17 @@ import (
 	}
 }
 
-type tpoint struct {
+type Tpoint struct {
 	X int
 	Y int
 }
 
-type trect struct {
-	Min tpoint
-	Max tpoint
+type Trect struct {
+	Min Tpoint
+	Max Tpoint
 }
 
-type tfieldinfo struct {
+type Tfieldinfo struct {
 	V1  bool
 	V2  rune
 	V3  string
@@ -522,28 +522,28 @@ type tfieldinfo struct {
 	V5  []int
 	V6  []string
 	V7  map[int]string
-	V8  trect
-	V9  *trect
-	V10 []trect
-	V11 []*trect
-	V12 [2]trect
-	V13 [2]*trect
+	V8  Trect
+	V9  *Trect
+	V10 []Trect
+	V11 []*Trect
+	V12 [2]Trect
+	V13 [2]*Trect
 }
 
-func tNewRect(x1 int, y1 int, x2 int, y2 int) *trect {
-	return &trect{tpoint{x1, y1}, tpoint{x2, y2}}
+func tNewRect(x1 int, y1 int, x2 int, y2 int) *Trect {
+	return &Trect{Tpoint{x1, y1}, Tpoint{x2, y2}}
 }
 
-func tMakeRect(x1 int, y1 int, x2 int, y2 int) trect {
-	return trect{tpoint{x1, y1}, tpoint{x2, y2}}
+func tMakeRect(x1 int, y1 int, x2 int, y2 int) Trect {
+	return Trect{Tpoint{x1, y1}, Tpoint{x2, y2}}
 }
 
-func tNewPoint(x int, y int) *tpoint {
-	return &tpoint{x, y}
+func tNewPoint(x int, y int) *Tpoint {
+	return &Tpoint{x, y}
 }
 
-func tMakePoint(x int, y int) tpoint {
-	return tpoint{x, y}
+func tMakePoint(x int, y int) Tpoint {
+	return Tpoint{x, y}
 }
 
 func execTestNewPoint(_ int, p *exec.Context) {
@@ -587,12 +587,12 @@ func TestPkgField(t *testing.T) {
 	ar[6] = m
 	ar[7] = tMakeRect(10, 20, 100, 200)
 	ar[8] = tNewRect(10, 20, 100, 200)
-	ar[9] = []trect{tMakeRect(10, 20, 30, 40), tMakeRect(50, 60, 70, 80)}
-	ar[10] = []*trect{tNewRect(10, 20, 30, 40), tNewRect(50, 60, 70, 80)}
-	ar[11] = [2]trect{tMakeRect(10, 20, 30, 40), tMakeRect(50, 60, 70, 80)}
-	ar[12] = [2]*trect{tNewRect(10, 20, 30, 40), tNewRect(50, 60, 70, 80)}
+	ar[9] = []Trect{tMakeRect(10, 20, 30, 40), tMakeRect(50, 60, 70, 80)}
+	ar[10] = []*Trect{tNewRect(10, 20, 30, 40), tNewRect(50, 60, 70, 80)}
+	ar[11] = [2]Trect{tMakeRect(10, 20, 30, 40), tMakeRect(50, 60, 70, 80)}
+	ar[12] = [2]*Trect{tNewRect(10, 20, 30, 40), tNewRect(50, 60, 70, 80)}
 
-	info := &tfieldinfo{}
+	info := &Tfieldinfo{}
 	info.V7 = make(map[int]string)
 	v := reflect.ValueOf(info).Elem()
 	for i := 0; i < v.NumField(); i++ {
@@ -695,6 +695,162 @@ import (
 	}
 	if info.V13[0] != nil || info.V13[1].Min.X != -105 || info.V13[1].Max.Y != -102 {
 		t.Fatal("V13", info.V13[0], info.V13[1])
+	}
+}
+
+func TestPkgType(t *testing.T) {
+	var I = exec.NewGoPackage("pkg_test_type")
+	I.RegisterTypes(
+		I.Type("Rect", reflect.TypeOf((*Trect)(nil)).Elem()),
+		I.Type("Point", reflect.TypeOf((*Tpoint)(nil)).Elem()),
+	)
+
+	var testSource = `
+	import pkg "pkg_test_type"
+
+	pkg.Rect{pkg.Point{1,2},pkg.Point{3,4}}
+	pkg.Rect{pkg.Point{X:5,Y:6},pkg.Point{X:7,Y:8}}
+	&pkg.Rect{pkg.Point{1,2},pkg.Point{3,4}}
+	&pkg.Rect{pkg.Point{X:5,Y:6},pkg.Point{X:7,Y:8}}
+	pkg.Point{1,2}
+	pkg.Point{X:3,Y:4}
+	&pkg.Point{5,6}
+	&pkg.Point{X:7,Y:8}
+	`
+
+	fsTestPkgVar := asttest.NewSingleFileFS("/foo", "bar.gop", testSource)
+	t.Log(testSource)
+
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseFSDir(fset, fsTestPkgVar, "/foo", nil, 0)
+	if err != nil || len(pkgs) != 1 {
+		t.Fatal("ParseFSDir failed:", err, len(pkgs))
+	}
+
+	bar := pkgs["main"]
+	b := exec.NewBuilder(nil)
+	_, _, err = newPackage(b, bar, fset)
+	if err != nil {
+		t.Fatal("Compile failed:", err)
+	}
+	code := b.Resolve()
+	code.Dump(os.Stdout)
+
+	ctx := exec.NewContext(code)
+	ctx.Exec(0, code.Len())
+	if v := ctx.Get(-8); v != nil && !reflect.DeepEqual(v, tMakeRect(1, 2, 3, 4)) {
+		t.Fatal("check rect", v)
+	}
+	if v := ctx.Get(-7); v != nil && !reflect.DeepEqual(v, tMakeRect(5, 6, 7, 8)) {
+		t.Fatal("check rect", v)
+	}
+	if v := ctx.Get(-6); v != nil && !reflect.DeepEqual(v, tNewRect(1, 2, 3, 4)) {
+		t.Fatal("check rect", v)
+	}
+	if v := ctx.Get(-5); v != nil && !reflect.DeepEqual(v, tNewRect(5, 6, 7, 8)) {
+		t.Fatal("check rect", v)
+	}
+	if v := ctx.Get(-4); v != nil && !reflect.DeepEqual(v, Tpoint{1, 2}) {
+		t.Fatal("check point", v)
+	}
+	if v := ctx.Get(-3); v != nil && !reflect.DeepEqual(v, Tpoint{X: 3, Y: 4}) {
+		t.Fatal("check point", v)
+	}
+	if v := ctx.Get(-2); v != nil && !reflect.DeepEqual(v, &Tpoint{5, 6}) {
+		t.Fatal("check point", v)
+	}
+	if v := ctx.Get(-1); v != nil && !reflect.DeepEqual(v, &Tpoint{X: 7, Y: 8}) {
+		t.Fatal("check point", v)
+	}
+
+}
+
+func TestPkgTakeAddr(t *testing.T) {
+	var I = exec.NewGoPackage("pkg_test_takeaddr")
+	rc := tMakeRect(10, 20, 100, 200)
+	ar := [2]Trect{tMakeRect(1, 2, 10, 20), tMakeRect(10, 20, 100, 200)}
+	slice := []Trect{tMakeRect(1, 2, 10, 20), tMakeRect(10, 20, 100, 200)}
+	m := make(map[int]Trect)
+	m[1] = tMakeRect(1, 2, 10, 20)
+	m[2] = tMakeRect(10, 20, 100, 200)
+	I.RegisterVars(
+		I.Var("RC", &rc),
+		I.Var("Ar", &ar),
+		I.Var("Slice", &slice),
+		I.Var("M", &m),
+	)
+	var testSource = `
+	import pkg "pkg_test_takeaddr"
+
+	&pkg.M
+	&pkg.Ar
+	&pkg.Ar[0]
+	&pkg.Ar[0].Min
+	&pkg.Ar[1].Max.Y
+	&pkg.Slice
+	&pkg.Slice[0]
+	&pkg.Slice[0].Min
+	&pkg.Slice[1].Max.Y
+	&pkg.RC
+	&pkg.RC.Min
+	&pkg.RC.Max.Y
+	`
+
+	fsTestPkgVar := asttest.NewSingleFileFS("/foo", "bar.gop", testSource)
+	t.Log(testSource)
+
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseFSDir(fset, fsTestPkgVar, "/foo", nil, 0)
+	if err != nil || len(pkgs) != 1 {
+		t.Fatal("ParseFSDir failed:", err, len(pkgs))
+	}
+
+	bar := pkgs["main"]
+	b := exec.NewBuilder(nil)
+	_, _, err = newPackage(b, bar, fset)
+	if err != nil {
+		t.Fatal("Compile failed:", err)
+	}
+	code := b.Resolve()
+	code.Dump(os.Stdout)
+
+	ctx := exec.NewContext(code)
+	ctx.Exec(0, code.Len())
+	if v := ctx.Get(-12); v != &m {
+		t.Fatal("takeAddr &m", v)
+	}
+	if v := ctx.Get(-11); v != &ar {
+		t.Fatal("takeAddr &ar", v)
+	}
+	if v := ctx.Get(-10); v != &ar[0] {
+		t.Fatal("takeAddr &ar[0]", v)
+	}
+	if v := ctx.Get(-9); v != &ar[0].Min {
+		t.Fatal("takeAddr &ar[0].Min", v)
+	}
+	if v := ctx.Get(-8); v != &ar[1].Max.Y {
+		t.Fatal("takeAddr &ar[1].Max.Y", v)
+	}
+	if v := ctx.Get(-7); v != &slice {
+		t.Fatal("takeAddr &slice", v)
+	}
+	if v := ctx.Get(-6); v != &slice[0] {
+		t.Fatal("takeAddr &slice[0]", v)
+	}
+	if v := ctx.Get(-5); v != &slice[0].Min {
+		t.Fatal("takeAddr &slice[0].Min", v)
+	}
+	if v := ctx.Get(-4); v != &slice[1].Max.Y {
+		t.Fatal("takeAddr &slice[1].Max.Y", v)
+	}
+	if v := ctx.Get(-3); v != &rc {
+		t.Fatal("takeAddr &rc", v)
+	}
+	if v := ctx.Get(-2); v != &rc.Min {
+		t.Fatal("takeAddr &rc.Min", v)
+	}
+	if v := ctx.Get(-1); v != &rc.Max.Y {
+		t.Fatal("takeAddr &rc.Max.Y", v)
 	}
 }
 

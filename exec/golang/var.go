@@ -118,7 +118,20 @@ func (p *scopeCtx) initStmts() {
 
 // DefineVar defines variables.
 func (p *Builder) DefineVar(vars ...exec.Var) *Builder {
-	p.addVar(vars...)
+	var vlist []exec.Var
+	for _, v := range vars {
+		if pkgPath := v.Type().PkgPath(); pkgPath != "" {
+			p.Import(pkgPath)
+		} else if v.Name() == "_" {
+			continue
+		}
+		pv := v.(*Var)
+		if strings.HasPrefix(pv.name, "_") {
+			pv.name = "_q" + pv.name
+		}
+		vlist = append(vlist, v)
+	}
+	p.addVar(vlist...)
 	return p
 }
 
@@ -133,6 +146,12 @@ func (p *Builder) Load(idx int32) *Builder {
 	return p
 }
 
+// Addr instr
+func (p *Builder) Addr(idx int32) *Builder {
+	p.rhs.Push(p.argIdent(idx))
+	return p
+}
+
 // Store instr
 func (p *Builder) Store(idx int32) *Builder {
 	p.lhs.Push(p.argIdent(idx))
@@ -141,6 +160,9 @@ func (p *Builder) Store(idx int32) *Builder {
 
 func (p *Builder) argIdent(idx int32) *ast.Ident {
 	i := len(p.cfun.in) + int(idx)
+	if i == -1 {
+		return Ident("_recv")
+	}
 	return Ident(toArg(i))
 }
 
@@ -214,6 +236,16 @@ func (p *Builder) AddrOp(kind exec.Kind, op exec.AddrOperator) *Builder {
 	if op == exec.OpAddrVal {
 		p.rhs.Push(&ast.StarExpr{
 			X: p.rhs.Pop().(ast.Expr),
+		})
+		return p
+	}
+	if op == exec.OpAssign {
+		p.emitStmt(&ast.AssignStmt{
+			Lhs: []ast.Expr{&ast.StarExpr{
+				X: p.rhs.Pop().(ast.Expr),
+			}},
+			Tok: token.ASSIGN,
+			Rhs: []ast.Expr{p.rhs.Pop().(ast.Expr)},
 		})
 		return p
 	}

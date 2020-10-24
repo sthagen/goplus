@@ -702,9 +702,13 @@ func (p *parser) parseArrayTypeOrSliceLit(allowSliceLit bool) (expr ast.Expr, is
 
 	var elt ast.Expr
 	if allowSliceLit {
+		sliceLit := newSliceLit(lbrack, rbrack, len)
+		if p.tok == token.LBRACK { // idx of slice lit
+			return sliceLit, true
+		}
 		elt = p.tryType()
 		if elt == nil { // [a]
-			return newSliceLit(lbrack, rbrack, len), true
+			return sliceLit, true
 		}
 	} else {
 		elt = p.parseType()
@@ -1839,7 +1843,9 @@ func (p *parser) parseSimpleStmt(mode int) (ast.Stmt, bool) {
 		}
 		return as, isRange
 	case token.ARROW:
-		return p.parseForPhraseStmtPart(x), true
+		if mode == rangeOk {
+			return p.parseForPhraseStmtPart(x), true
+		}
 	}
 
 	if len(x) > 1 {
@@ -2705,6 +2711,7 @@ func (p *parser) parseDecl(sync map[token.Token]bool) ast.Decl {
 		defer un(trace(p, "Declaration"))
 	}
 	var f parseSpecFunction
+	pos := p.pos
 	switch p.tok {
 	case token.CONST, token.VAR:
 		f = p.parseValueSpec
@@ -2713,10 +2720,13 @@ func (p *parser) parseDecl(sync map[token.Token]bool) ast.Decl {
 		f = p.parseTypeSpec
 
 	case token.FUNC:
-		return p.parseFuncDecl()
-
+		decl := p.parseFuncDecl()
+		if p.errors.Len() != 0 {
+			p.errorExpected(pos, "declaration")
+			p.advance(sync)
+		}
+		return decl
 	default:
-		pos := p.pos
 		p.errorExpected(pos, "declaration")
 		p.advance(sync)
 		return &ast.BadDecl{From: pos, To: p.pos}

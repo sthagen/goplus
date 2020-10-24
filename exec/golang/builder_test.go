@@ -204,6 +204,7 @@ func TestGoField(t *testing.T) {
 
 import (
 	fmt "fmt"
+	golang "github.com/goplus/gop/exec/golang"
 	pkg_field "pkg_field"
 )
 
@@ -211,17 +212,17 @@ var y golang.testRect
 
 func main() {
 	y = pkg_field.Rect2
-	(&pkg_field.Rect).Info = "hello"
-	(&pkg_field.Rect).Pt1.X = -1
-	(&pkg_field.Rect).Pt2.Y = -2
-	(&y).Info = "world"
-	(&y).Pt1.X = -10
-	(&y).Pt2.Y = -20
+	pkg_field.Rect.Info = "hello"
+	pkg_field.Rect.Pt1.X = -1
+	pkg_field.Rect.Pt2.Y = -2
+	y.Info = "world"
+	y.Pt1.X = -10
+	y.Pt2.Y = -20
 	pkg_field.GetRect().Info = "next"
 	pkg_field.GetRect().Pt1.X = 101
 	pkg_field.GetRect().Pt2.Y = 102
 	pkg_field.Rect2 = y
-	fmt.Println(pkg_field.Rect.Info, pkg_field.Rect.Pt2.Y, y.Info, y.Pt2.Y, pkg_field.GetRect().Info, pkg_field.GetRect().Pt2.Y, &(&pkg_field.Rect).Pt1, &(&y).Pt1, &pkg_field.GetRect().Pt1)
+	fmt.Println(pkg_field.Rect.Info, pkg_field.Rect.Pt2.Y, y.Info, y.Pt2.Y, pkg_field.GetRect().Info, pkg_field.GetRect().Pt2.Y, &pkg_field.Rect.Pt1, &y.Pt1, &pkg_field.GetRect().Pt1)
 }
 `
 	println, _ := I.FindFuncv("println")
@@ -262,10 +263,12 @@ func main() {
 	gtyp := reflect.TypeOf(gRect)
 	ytyp := reflect.TypeOf(rc)
 	y := NewVar(ytyp, "y")
+	u := NewVar(exec.TyInt, "_")
 	b := NewBuilder("main", nil, nil)
 
 	code := b.Interface().
-		DefineVar(y). // y
+		DefineVar(y). // var y testRect
+		DefineVar(u). // var _ int
 		EndStmt(nil, &stmtState{rhsBase: 0}).
 		LoadGoVar(x2).
 		StoreVar(y). // y = pkg_field.Rect2
@@ -366,9 +369,9 @@ func main() {
 	typ := reflect.StructOf(fields)
 
 	code := NewBuilder("main", nil, nil).Interface().
-		Push("Name").
+		Push(0).
 		Push("bar").
-		Push("Age").
+		Push(1).
 		Push(30).
 		Struct(typ, 2).
 		CallGoFuncv(println, 1, 1).
@@ -410,11 +413,67 @@ func main() {
 	typ := reflect.StructOf(fields)
 
 	code := NewBuilder("main", nil, nil).Interface().
-		Push("Name").
+		Push(0).
 		Push("bar").
-		Push("Age").
+		Push(1).
 		Push(30).
 		Struct(reflect.PtrTo(typ), 2).
+		CallGoFuncv(println, 1, 1).
+		EndStmt(nil, &stmtState{rhsBase: 0}).
+		Resolve()
+
+	codeGen := code.(*Code).String()
+	if codeGen != codeExp {
+		fmt.Println(codeGen)
+		fmt.Println(codeExp)
+		t.Fatal("TestStruct failed: codeGen != codeExp")
+	}
+}
+
+func TestType(t *testing.T) {
+	println, _ := I.FindFuncv("println")
+
+	codeExp := `package main
+
+import fmt "fmt"
+
+type Person struct {
+	Name string
+	Age  int
+}
+
+var p Person
+
+func main() {
+	p = Person{Name: "bar", Age: 30}
+	fmt.Println(p)
+}
+`
+	typ := reflect.StructOf([]reflect.StructField{
+		{
+			Name: "Name",
+			Type: exec.TyString,
+		},
+		{
+			Name: "Age",
+			Type: exec.TyInt,
+		},
+	})
+
+	p := NewVar(typ, "p")
+
+	code := NewBuilder("main", nil, nil).Interface().
+		DefineVar(p).
+		DefineType(typ, "Person").
+		EndStmt(nil, &stmtState{rhsBase: 0}).
+		Push(0).
+		Push("bar").
+		Push(1).
+		Push(30).
+		Struct(typ, 2).
+		StoreVar(p).
+		EndStmt(nil, &stmtState{rhsBase: 0}).
+		LoadVar(p).
 		CallGoFuncv(println, 1, 1).
 		EndStmt(nil, &stmtState{rhsBase: 0}).
 		Resolve()

@@ -105,8 +105,8 @@ func toFuncType(ctx *blockCtx, t *ast.FuncType) iType {
 	return reflect.FuncOf(in, out, variadic)
 }
 
-func buildFuncType(fi exec.FuncInfo, ctx *blockCtx, t *ast.FuncType) {
-	in, args, variadic := toArgTypes(ctx, t.Params)
+func buildFuncType(recv *ast.FieldList, fi exec.FuncInfo, ctx *blockCtx, t *ast.FuncType) {
+	in, args, variadic := toArgTypes(ctx, recv, t.Params)
 	rets := toReturnTypes(ctx, t.Results)
 	if variadic {
 		fi.Vargs(in...)
@@ -184,9 +184,17 @@ func toReturnTypes(ctx *blockCtx, fields *ast.FieldList) (vars []exec.Var) {
 	return
 }
 
-func toArgTypes(ctx *blockCtx, fields *ast.FieldList) ([]reflect.Type, []string, bool) {
+func toArgTypes(ctx *blockCtx, recv, fields *ast.FieldList) ([]reflect.Type, []string, bool) {
 	var types []reflect.Type
 	var names []string
+	if recv != nil {
+		for _, fld := range recv.List[0].Names {
+			names = append(names, fld.Name)
+			break
+		}
+		typ, _ := toTypeEx(ctx, recv.List[0].Type)
+		types = append(types, typ.(reflect.Type))
+	}
 	last := len(fields.List) - 1
 	for i := 0; i <= last; i++ {
 		field := fields.List[i]
@@ -230,6 +238,20 @@ func toInterfaceType(ctx *blockCtx, v *ast.InterfaceType) iType {
 }
 
 func toExternalType(ctx *blockCtx, v *ast.SelectorExpr) iType {
+	if ident, ok := v.X.(*ast.Ident); ok {
+		if sym, ok := ctx.find(ident.Name); ok {
+			switch t := sym.(type) {
+			case string:
+				pkg := ctx.FindGoPackage(t)
+				if pkg == nil {
+					log.Panicln("toExternalType failed: package not found -", v)
+				}
+				if typ, ok := pkg.FindType(v.Sel.Name); ok {
+					return typ
+				}
+			}
+		}
+	}
 	panic("toExternalType: todo")
 }
 
@@ -237,8 +259,12 @@ func toIdentType(ctx *blockCtx, ident string) iType {
 	if typ, ok := ctx.builtin.FindType(ident); ok {
 		return typ
 	}
-	log.Panicln("toIdentType failed: unknown ident -", ident)
-	return nil
+	typ, err := ctx.findType(ident)
+	if err != nil {
+		log.Panicln("toIdentType failed: findType error", err)
+		return nil
+	}
+	return typ.Type
 }
 
 func toArrayType(ctx *blockCtx, v *ast.ArrayType) iType {
@@ -307,6 +333,12 @@ func buildField(ctx *blockCtx, field *ast.Field, anonymous bool, fieldName strin
 		Type:      toType(ctx, field.Type).(reflect.Type),
 		Anonymous: anonymous,
 	}
+	if fieldName != "" {
+		c := fieldName[0]
+		if 'a' <= c && c <= 'z' || c == '_' {
+			f.PkgPath = ctx.pkg.Name
+		}
+	}
 	if field.Tag != nil {
 		tag, _ := strconv.Unquote(field.Tag.Value)
 		f.Tag = reflect.StructTag(tag)
@@ -317,7 +349,9 @@ func buildField(ctx *blockCtx, field *ast.Field, anonymous bool, fieldName strin
 // -----------------------------------------------------------------------------
 
 type typeDecl struct {
-	Methods map[string]*methodDecl
+	Methods map[string]*funcDecl
+	Type    reflect.Type
+	Name    string
 	Alias   bool
 }
 
@@ -334,6 +368,7 @@ type FuncDecl struct {
 	typ      *ast.FuncType
 	body     *ast.BlockStmt
 	ctx      *blockCtx
+	recv     *ast.FieldList
 	fi       exec.FuncInfo
 	used     bool
 	cached   bool
@@ -343,16 +378,20 @@ type FuncDecl struct {
 
 type funcDecl = FuncDecl
 
-func newFuncDecl(name string, typ *ast.FuncType, body *ast.BlockStmt, ctx *blockCtx) *FuncDecl {
+func newFuncDecl(name string, recv *ast.FieldList, typ *ast.FuncType, body *ast.BlockStmt, ctx *blockCtx) *FuncDecl {
 	nestDepth := ctx.getNestDepth()
-	fi := ctx.NewFunc(name, nestDepth)
-	return &FuncDecl{typ: typ, body: body, ctx: ctx, fi: fi}
+	var isMethod int
+	if recv != nil {
+		isMethod = 1
+	}
+	fi := ctx.NewFunc(name, nestDepth, isMethod)
+	return &FuncDecl{typ: typ, recv: recv, body: body, ctx: ctx, fi: fi}
 }
 
 // Get returns function information.
 func (p *FuncDecl) Get() exec.FuncInfo {
 	if !p.cached {
-		buildFuncType(p.fi, p.ctx, p.typ)
+		buildFuncType(p.recv, p.fi, p.ctx, p.typ)
 		p.cached = true
 	}
 	return p.fi

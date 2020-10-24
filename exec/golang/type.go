@@ -44,6 +44,11 @@ func toStructField(p *Builder, f reflect.StructField) *ast.Field {
 	return field
 }
 
+// ChanType instr
+func ChanType(p *Builder, typ reflect.Type) *ast.ChanType {
+	return &ast.ChanType{Dir: ast.SEND | ast.RECV, Value: Ident(typ.Elem().String())}
+}
+
 // MapType instr
 func MapType(p *Builder, typ reflect.Type) *ast.MapType {
 	key := Type(p, typ.Key())
@@ -134,7 +139,12 @@ func FuncType(p *Builder, typ reflect.Type) *ast.FuncType {
 }
 
 // Type instr
-func Type(p *Builder, typ reflect.Type) ast.Expr {
+func Type(p *Builder, typ reflect.Type, actualTypes ...bool) ast.Expr {
+	if len(actualTypes) == 0 || (len(actualTypes) > 0 && !actualTypes[0]) {
+		if gtype, ok := p.types[typ]; ok {
+			return Ident(gtype.Name())
+		}
+	}
 	pkgPath, name := typ.PkgPath(), typ.Name()
 	log.Debug(typ, "-", "pkgPath:", pkgPath, "name:", name)
 	if name != "" {
@@ -157,6 +167,7 @@ func Type(p *Builder, typ reflect.Type) ast.Expr {
 	case reflect.Interface:
 		return InterfaceType(p, typ)
 	case reflect.Chan:
+		return ChanType(p, typ)
 	case reflect.Struct:
 		return StructType(p, typ)
 	}
@@ -165,3 +176,25 @@ func Type(p *Builder, typ reflect.Type) ast.Expr {
 }
 
 // -----------------------------------------------------------------------------
+
+type GoType struct {
+	name string
+	typ  reflect.Type
+}
+
+// DefineVar defines types.
+func (p *Builder) DefineType(typ reflect.Type, name string) *Builder {
+	p.types[typ] = &GoType{
+		name: name,
+		typ:  typ,
+	}
+	return p
+}
+
+func (p *GoType) Type() reflect.Type {
+	return p.typ
+}
+
+func (p *GoType) Name() string {
+	return p.name
+}

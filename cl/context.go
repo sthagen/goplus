@@ -22,6 +22,7 @@ import (
 	"reflect"
 
 	"github.com/goplus/gop/ast"
+	"github.com/goplus/gop/ast/astutil"
 	"github.com/goplus/gop/exec.spec"
 	"github.com/goplus/gop/token"
 	"github.com/qiniu/x/log"
@@ -35,6 +36,7 @@ type pkgCtx struct {
 	builtin exec.GoPackage
 	out     exec.Builder
 	usedfns []*funcDecl
+	types   map[reflect.Type]*typeDecl
 	pkg     *ast.Package
 	fset    *token.FileSet
 }
@@ -43,6 +45,7 @@ func newPkgCtx(out exec.Builder, pkg *ast.Package, fset *token.FileSet) *pkgCtx 
 	pkgOut := out.GetPackage()
 	builtin := pkgOut.FindGoPackage("")
 	p := &pkgCtx{Package: pkgOut, builtin: builtin, out: out, pkg: pkg, fset: fset}
+	p.types = make(map[reflect.Type]*typeDecl)
 	p.infer.Init()
 	return p
 }
@@ -126,38 +129,26 @@ func (fc *funcCtx) nextFlow(post, done exec.Label, name string) {
 	}
 }
 
-func (fc *funcCtx) getBreakLabel(labelName string) (label exec.Label, rangeFor bool) {
-	if fc.currentFlow == nil {
-		return nil, false
-	}
-	if fc.currentFlow.postLabel == nil && fc.currentFlow.doneLabel == nil {
-		return nil, true
-	}
+func (fc *funcCtx) getBreakLabel(labelName string) (label exec.Label) {
 	for i := fc.currentFlow; i != nil; i = i.parent {
 		if i.doneLabel != nil {
 			if labelName == "" || i.name == labelName {
-				return i.doneLabel, false
+				return i.doneLabel
 			}
 		}
 	}
-	return nil, false
+	return nil
 }
 
-func (fc *funcCtx) getContinueLabel(labelName string) (label exec.Label, rangeFor bool) {
-	if fc.currentFlow == nil {
-		return nil, false
-	}
-	if fc.currentFlow.postLabel == nil && fc.currentFlow.doneLabel == nil {
-		return nil, true
-	}
+func (fc *funcCtx) getContinueLabel(labelName string) (label exec.Label) {
 	for i := fc.currentFlow; i != nil; i = i.parent {
 		if i.postLabel != nil {
 			if labelName == "" || i.name == labelName {
-				return i.postLabel, false
+				return i.postLabel
 			}
 		}
 	}
-	return nil, false
+	return nil
 }
 
 func (fc *funcCtx) checkLabels() {
@@ -190,11 +181,13 @@ type blockCtx struct {
 	syms            map[string]iSymbol
 	noExecCtx       bool
 	takeAddr        bool
+	indirect        bool
 	checkFlag       bool
 	checkLoadAddr   bool
 	fieldStructType reflect.Type
 	fieldIndex      []int
 	fieldExprX      func()
+	underscore      int
 }
 
 // function block ctx
@@ -379,7 +372,7 @@ func (p *blockCtx) insertFuncVars(in []reflect.Type, args []string, rets []exec.
 }
 
 func (p *blockCtx) insertVar(name string, typ reflect.Type, inferOnly ...bool) *execVar {
-	if p.exists(name) {
+	if name != "_" && p.exists(name) {
 		log.Panicln("insertVar failed: symbol exists -", name)
 	}
 	v := p.NewVar(typ, name)
@@ -398,27 +391,48 @@ func (p *blockCtx) insertFunc(name string, fun *funcDecl) {
 	p.syms[name] = fun
 }
 
-func (p *blockCtx) insertMethod(typeName, methodName string, method *methodDecl) {
+func (p *blockCtx) insertMethod(recv astutil.RecvInfo, methodName string, decl *ast.FuncDecl, ctx *blockCtx) {
 	if p.parent != nil {
 		log.Panicln("insertMethod failed: unexpected - non global method declaration?")
 	}
-	typ, err := p.findType(typeName)
+	typ, err := p.findType(recv.Type)
 	if err == ErrNotFound {
 		typ = new(typeDecl)
-		p.syms[typeName] = typ
+		p.syms[recv.Type] = typ
 	} else if err != nil {
 		log.Panicln("insertMethod failed:", err)
 	} else if typ.Alias {
 		log.Panicln("insertMethod failed: alias?")
 	}
+
+	var t reflect.Type = typ.Type
+	pointer := recv.Pointer
+	for pointer > 0 {
+		t = reflect.PtrTo(t)
+		pointer--
+	}
+
+	method := newFuncDecl(methodName, decl.Recv, decl.Type, decl.Body, ctx)
+
 	if typ.Methods == nil {
-		typ.Methods = map[string]*methodDecl{methodName: method}
+		typ.Methods = map[string]*funcDecl{methodName: method}
 	} else {
 		if _, ok := typ.Methods[methodName]; ok {
-			log.Panicln("insertMethod failed: method exists -", typeName, methodName)
+			log.Panicln("insertMethod failed: method exists -", recv.Type, methodName)
 		}
 		typ.Methods[methodName] = method
 	}
 }
 
 // -----------------------------------------------------------------------------
+
+func (c *blockCtx) findMethod(typ reflect.Type, methodName string) (*funcDecl, bool) {
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	if tDecl, ok := c.types[typ]; ok {
+		fDecl, ok := tDecl.Methods[methodName]
+		return fDecl, ok
+	}
+	return nil, false
+}

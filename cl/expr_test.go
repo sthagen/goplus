@@ -366,6 +366,33 @@ func TestPanic(t *testing.T) {
 	)
 }
 
+func TestTakeAddrMap(t *testing.T) {
+	cltest.Expect(t, `
+		m := {1:"hello",2:"ok"}
+		println(m)
+		println(&m)
+		`,
+		"map[1:hello 2:ok]\n&map[1:hello 2:ok]\n")
+}
+
+func TestTakeAddrMapIndexBad(t *testing.T) {
+	cltest.Expect(t, `
+		m := {1:"hello",2:"ok"}
+		println(&m[1])
+		`,
+		"",
+		"cannot take the address of m[1]\n")
+}
+
+func TestTakeAddrStringBad(t *testing.T) {
+	cltest.Expect(t, `
+		m := "hello"
+		println(&m[1])
+		`,
+		"",
+		"cannot take the address of m[1]\n")
+}
+
 func TestTypeCast(t *testing.T) {
 	cltest.Call(t, `
 	x := []byte("hello")
@@ -526,6 +553,78 @@ func TestArray(t *testing.T) {
 		println(len(x))
 	`,
 		"x[1:]: [2.3 3.1 4]\n4\n")
+}
+
+func TestLoadVar(t *testing.T) {
+	cltest.Expect(t, `
+		var x1 int
+		var x2 int = 10
+		var x3 = 10
+		println("x:",x1,x2,x3)
+		`,
+		"x: 0 10 10\n")
+	cltest.Expect(t, `
+		type Point struct {
+			X int
+			Y int
+		}
+		var x1 Point
+		var x2 Point = Point{10,20}
+		var x3 = Point{-10,-20}
+		println("x:",x1,x2,x3)
+		`,
+		"x: {0 0} {10 20} {-10 -20}\n")
+}
+
+func TestLoadVar2(t *testing.T) {
+	cltest.Expect(t, `
+		func main() {
+			var x1 int
+			var x2 int = 10
+			var x3 = 10
+			println("x:",x1,x2,x3)
+		}`,
+		"x: 0 10 10\n")
+	cltest.Expect(t, `
+		type Point struct {
+			X int
+			Y int
+		}
+		func main() {
+			var x1 Point
+			var x2 Point = Point{10,20}
+			var x3 = Point{-10,-20}
+			println("x:",x1,x2,x3)
+		}`,
+		"x: {0 0} {10 20} {-10 -20}\n")
+
+	cltest.Expect(t, `
+		func main() {
+			type Point struct {
+				X int
+				Y int
+			}
+			var x1 Point
+			var x2 Point = Point{10,20}
+			var x3 = Point{-10,-20}
+			println("x:",x1,x2,x3)
+		}`,
+		"x: {0 0} {10 20} {-10 -20}\n")
+}
+
+func TestLoadVar3(t *testing.T) {
+	cltest.Expect(t, `
+		var x1,x2,x3 = 10,20,x1+x2
+		println("x:",x1,x2,x3)
+		`,
+		"x: 10 20 30\n")
+	cltest.Expect(t, `
+		var x1,x2,x3 = 10,20,x1+x2
+		func main() {
+			println("x:",x1,x2,x3)
+		}
+		`,
+		"x: 10 20 30\n")
 }
 
 func TestMap(t *testing.T) {
@@ -695,6 +794,233 @@ func TestRational(t *testing.T) {
 	`).Equal(big.NewRat(7, 3))
 }
 
+// TODO #575
+func _TestIsNoExecCtx(t *testing.T) {
+	cltest.Expect(t, `
+	fns := make([]func() int, 3)
+	for i, x <- [3, 15, 777] {
+		var v = x
+		var fn = func() int {
+			return v
+		}
+		fns[i] = fn
+	}
+	println("values:", fns[0](), fns[1](), fns[2]())`, "values: 3 15 777\n")
+}
+
+func TestComplex(t *testing.T) {
+	cltest.Expect(t, `
+	c := complex(1,2)
+	printf("%v %T\n",c,c)
+	`, "(1+2i) complex128\n")
+	cltest.Expect(t, `
+	c := complex(float64(1),2)
+	printf("%v %T\n",c,c)
+	`, "(1+2i) complex128\n")
+	cltest.Expect(t, `
+	c := complex(float32(1),2)
+	printf("%v %T\n",c,c)
+	`, "(1+2i) complex64\n")
+	cltest.Expect(t, `
+	func test() float64 { return 1 }
+	c := complex(test(),2)
+	printf("%v %T\n",c,c)
+	`, "(1+2i) complex128\n")
+	cltest.Expect(t, `
+	func test() float32 { return 1 }
+	c := complex(test(),2)
+	printf("%v %T\n",c,c)
+	`, "(1+2i) complex64\n")
+
+	cltest.Expect(t, `
+	c := real(1+2i)
+	printf("%v %T\n",c,c)
+	`, "1 float64\n")
+	cltest.Expect(t, `
+	c := real(complex128(1+2i))
+	printf("%v %T\n",c,c)
+	`, "1 float64\n")
+	cltest.Expect(t, `
+	c := real(complex64(1+2i))
+	printf("%v %T\n",c,c)
+	`, "1 float32\n")
+	cltest.Expect(t, `
+	c := real(complex(1,2))
+	printf("%v %T\n",c,c)
+	`, "1 float64\n")
+	cltest.Expect(t, `
+	c := real(complex(1,float32(2)))
+	printf("%v %T\n",c,c)
+	`, "1 float32\n")
+
+	cltest.Expect(t, `
+	c := imag(1+2i)
+	printf("%v %T\n",c,c)
+	`, "2 float64\n")
+	cltest.Expect(t, `
+	c := imag(complex128(1+2i))
+	printf("%v %T\n",c,c)
+	`, "2 float64\n")
+	cltest.Expect(t, `
+	c := imag(complex64(1+2i))
+	printf("%v %T\n",c,c)
+	`, "2 float32\n")
+	cltest.Expect(t, `
+	c := imag(complex(1,2))
+	printf("%v %T\n",c,c)
+	`, "2 float64\n")
+	cltest.Expect(t, `
+	c := imag(complex(float32(1),2))
+	printf("%v %T\n",c,c)
+	`, "2 float32\n")
+}
+
+func TestBadComplex(t *testing.T) {
+	cltest.Expect(t, `
+	complex(1)
+	`, "", nil)
+	cltest.Expect(t, `
+	complex(1,2,3)
+	`, "", nil)
+	cltest.Expect(t, `
+	complex(float32(1),float64(2))
+	`, "", nil)
+	cltest.Expect(t, `
+	func test() int { return 100 }
+	complex(test(),2)
+	`, "", nil)
+	cltest.Expect(t, `
+	complex(1,int(2))
+	`, "", nil)
+
+	cltest.Expect(t, `
+	real()
+	`, "", nil)
+	cltest.Expect(t, `
+	real(1,2)
+	`, "", nil)
+	cltest.Expect(t, `
+	real(int(1))
+	`, "", nil)
+
+	cltest.Expect(t, `
+	imag()
+	`, "", nil)
+	cltest.Expect(t, `
+	imag(1,2)
+	`, "", nil)
+	cltest.Expect(t, `
+	imag(int(1))
+	`, "", nil)
+}
+
+func TestResult(t *testing.T) {
+	cltest.Expect(t, `
+	import "fmt"
+	type Writer struct {
+	}
+	func (w *Writer) Write(data string) (n int, err error) {
+		return fmt.Println(data)
+	}
+	w := &Writer{}
+	n, err := w.Write("hello")
+	println(n,err)
+	`, "hello\n6 <nil>\n")
+	cltest.Expect(t, `
+	import "fmt"
+	type Writer struct {
+	}
+	func (w *Writer) Write(data string) (int, error) {
+		fmt.Println(data)
+		return len(data)+1,nil
+	}
+	w := &Writer{}
+	n, err := w.Write("hello")
+	println(n,err)
+	`, "hello\n6 <nil>\n")
+	cltest.Expect(t, `
+	import "fmt"
+	type Writer struct {
+	}
+	func myint(n int) int {
+		return n
+	}
+	func myerr(err error) error {
+		return err
+	}
+	func (w *Writer) Write(data string) (int, error) {
+		n, err := fmt.Println(data)
+		return myint(n),myerr(err)
+	}
+	w := &Writer{}
+	n, err := w.Write("hello")
+	println(n,err)
+	`, "hello\n6 <nil>\n")
+}
+
+func TestBadResult(t *testing.T) {
+	cltest.Expect(t, `
+	import "fmt"
+	type Writer struct {
+	}
+	func (w *Writer) Write(data string) (error) {
+		err := fmt.Println(data)
+		return err
+	}
+	w := &Writer{}
+	n, err := w.Write("hello")
+	println(n,err)
+	`, "", nil)
+	cltest.Expect(t, `
+	import "fmt"
+	type Writer struct {
+	}
+	func (w *Writer) Write(data string) (err error) {
+		return fmt.Println(data)
+	}
+	w := &Writer{}
+	n, err := w.Write("hello")
+	println(n,err)
+	`, "", nil)
+}
+
+func TestUnderscore(t *testing.T) {
+	cltest.Expect(t, `
+	import "fmt"
+	var _ int
+	var _ string
+	_ = 100
+	_ = "hello"
+	_, a := 100,"world"
+	b, _ := fmt.Println("Hello World")
+	println(a,b)
+	`, "Hello World\nworld 12\n")
+}
+
+func TestBadUnderscore(t *testing.T) {
+	cltest.Expect(t, `
+	println(_)
+	`, "", nil)
+	cltest.Expect(t, `
+	_ := 100
+	`, "", nil)
+	cltest.Expect(t, `
+	_,_ := 100,"hello"
+	`, "", nil)
+	cltest.Expect(t, `
+	import "fmt"
+	_, _ := fmt.Println("Hello World")
+	`, "", nil)
+}
+
+func TestBadVar(t *testing.T) {
+	cltest.Expect(t, `
+	var a int
+	var a string`, "", nil)
+	cltest.Expect(t, `
+	a = 10`, "", nil)
+}
+
 type testData struct {
 	clause string
 	want   string
@@ -855,10 +1181,308 @@ var testStructClauses = map[string]testData{
 				B string
 			}{A: 1,B: "Hello"})
 					`, "&{1 Hello}\n", false},
+	"struct_key_value_ptr_unexport_field": {`
+			println(&struct {
+				a int  ` + "`json:\"a\"`" + `
+				b string
+			}{a: 1,b: "Hello"})
+					`, "&{1 Hello}\n", false},
+	"struct_key_value_unexport_field": {`
+			println(struct {
+				a int  ` + "`json:\"a\"`" + `
+				b string
+			}{a: 1,b: "Hello"})
+					`, "{1 Hello}\n", false},
+	"struct_unexport_field": {`
+			println(struct {
+				a int
+				b string
+			}{1, "Hello"})	
+					`, "{1 Hello}\n", false},
+	"struct_ptr_unexport_field": {`
+			println(&struct {
+				a int
+				b string
+			}{1, "Hello"})	
+					`, "&{1 Hello}\n", false},
+	"struct_store_field_panic": {`
+				import "sync"
+
+				mu := sync.WaitGroup{}
+				
+				mu.noCopy = struct{}{}
+					`, "", true},
 }
 
 func TestStruct2(t *testing.T) {
 	testScripts(t, "TestStruct", testStructClauses)
+}
+
+// -----------------------------------------------------------------------------
+var testMethodClauses = map[string]testData{
+	"method set": {`
+					type Person struct {
+						Name string
+						Age  int
+					}
+					func (p *Person) SetName(name string) {
+						p.Name = name
+					}
+
+					p := &Person{
+						Name: "bar",
+						Age:  30,
+					}
+
+					p.SetName("foo")
+					println(p.Name)
+					`, "foo\n", false},
+	"method get": {`
+					type Person struct {
+						Name string
+						Age  int
+					}
+					func (p *Person) GetName() string {
+						return p.Name
+					}
+
+					p := &Person{
+						Name: "bar",
+						Age:  30,
+					}
+
+					println(p.GetName())
+					`, "bar\n", false},
+
+	"struct set ptr": {`
+	type Person struct {
+		Name string
+		Age  int
+	}
+
+	p := &Person{
+		Name: "bar",
+		Age:  30,
+	}
+	p.Name = "foo"
+
+	println(p)
+	`, "&{foo 30}\n", false},
+
+	"struct set": {`
+	type Person struct {
+		Name string
+		Age  int
+	}
+
+	p := Person{
+		Name: "bar",
+		Age:  30,
+	}
+	p.Name = "foo"
+
+	println(p)
+	`, "{foo 30}\n", false},
+
+	"struct set ptr arg": {`
+	type Person struct {
+		Name string
+		Age  int
+	}
+	func SetName(p *Person,name string) {
+		p.Name = name
+	}
+
+	p := Person{
+		Name: "bar",
+		Age:  30,
+	}
+	SetName(&p,"foo")
+
+	println(p)
+	`, "{foo 30}\n", false},
+
+	"method func no args": {`
+					type Person struct {
+						Name string ` + "`json:\"name\"`" + `
+						Age  int
+					}
+					func (p *Person) PrintName() {
+						println(p.Name)
+					}
+
+					p := &Person{
+						Name: "bar",
+						Age:  30,
+					}
+
+					p.PrintName()
+					`, "bar\n", false},
+	"method ptr struct no prt": {`
+					type Person struct {
+						Name string ` + "`json:\"name\"`" + `
+						Age  int
+					}
+					func (p *Person) PrintName() {
+						println(p.Name)
+					}
+
+					p := Person{
+						Name: "bar",
+						Age:  30,
+					}
+
+					p.PrintName()
+					`, "bar\n", false},
+
+	"method load field": {`
+					type Person struct {
+						Name string
+						Age  int
+					}
+					func (p *Person) SetName(name string,age int) {
+						p.Name = name
+						p.Age = age
+						println(name)
+						println(p.Age)
+					}
+
+					p := Person{
+						Name: "bar",
+						Age:  30,
+					}
+
+					p.SetName("foo",31)
+					`, "foo\n31\n", false},
+	"method int type": {`
+					
+					type M int
+
+					func (m M) Foo() {
+						println("foo", m)
+					}
+
+					m := M(0)
+					m.Foo()
+					println(m)
+					`, "foo 0\n0\n", false},
+}
+
+func TestMethodCases(t *testing.T) {
+	testScripts(t, "TestMethod", testMethodClauses)
+}
+
+// -----------------------------------------------------------------------------
+
+var testStarExprClauses = map[string]testData{
+	"star expr": {`
+				func A(a *int, c *struct {
+					b *int
+					m map[string]*int
+					s []*int
+				}) {
+					*a = 5
+					*c.b = 3
+					*c.m["foo"] = 7
+					*c.s[0] = 9
+				}
+
+				a1 := 6
+				a2 := 6
+				a3 := 6
+				c := struct {
+					b *int
+					m map[string]*int
+					s []*int
+				}{
+					b: &a1,
+					m: map[string]*int{
+						"foo": &a2,
+					},
+					s: []*int{&a3},
+				}
+				A(&a1, &c)
+				*c.m["foo"] = 8
+				*c.s[0] = 10
+				*c.s[0+0] = 10
+				println(a1, *c.b, *c.m["foo"], *c.s[0], *c.s[0+0])
+
+					`, "3 3 8 10 10\n", false},
+	"star expr exec": {`
+					func A(a *int, c *struct {
+						b *int
+						m map[string]*int
+						s []*int
+					}) {
+						*a = 5
+						*c.b = 3
+						*c.m["foo"] = 7
+						*c.s[0] = 9
+					}
+	
+					func main() {
+						a1 := 6
+						a2 := 6
+						a3 := 6
+						c := struct {
+							b *int
+							m map[string]*int
+							s []*int
+						}{
+							b: &a1,
+							m: map[string]*int{
+								"foo": &a2,
+							},
+							s: []*int{&a3},
+						}
+						A(&a1, &c)
+						*c.m["foo"] = 8
+						*c.s[0] = 10
+						*c.s[0+0] = 10
+						println(a1, *c.b, *c.m["foo"], *c.s[0], *c.s[0+0])
+					}
+						`, "3 3 8 10 10\n", false},
+	"star expr lhs slice index func": {`
+					func A(a *int, c *struct {
+						b *int
+						m map[string]*int
+						s []*int
+					}) {
+						*a = 5
+						*c.b = 3
+						*c.m["foo"] = 7
+						*c.s[0] = 9
+					}
+					
+					func Index() int {
+						return 0
+					}
+					
+					a1 := 6
+					a2 := 6
+					a3 := 6
+					c := struct {
+						b *int
+						m map[string]*int
+						s []*int
+					}{
+						b: &a1,
+						m: map[string]*int{
+							"foo": &a2,
+						},
+						s: []*int{&a3},
+					}
+					A(&a1, &c)
+					*c.m["foo"] = 8
+					*c.s[0] = 10
+					*c.s[Index()] = 11
+					println(a1, *c.b, *c.m["foo"], *c.s[0])
+	
+						`, "3 3 8 11\n", false},
+}
+
+func TestStarExpr(t *testing.T) {
+	testScripts(t, "TestStarExpr", testStarExprClauses)
 }
 
 func testScripts(t *testing.T, testName string, scripts map[string]testData) {
@@ -873,3 +1497,14 @@ func testScripts(t *testing.T, testName string, scripts map[string]testData) {
 }
 
 // -----------------------------------------------------------------------------
+
+func TestTwoValueExpr(t *testing.T) {
+	clause := `m:={2:3,1:2}
+			if v,ok:=m[m[1]];ok{
+				println(1,v,ok)
+			}
+			if v,ok:=m[m[3]];!ok{
+				println(3,v,ok)
+			}`
+	cltest.Expect(t, clause, "1 3 true\n3 0 false\n")
+}

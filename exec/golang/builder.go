@@ -90,15 +90,16 @@ const (
 // Builder is a class that generates go code.
 type Builder struct {
 	lhs, rhs    exec.Stack
-	out         *Code             // golang code
-	pkgName     string            // package name
-	imports     map[string]string // pkgPath => aliasName
-	importPaths map[string]string // aliasName => pkgPath
-	gblScope    scopeCtx          // global scope
-	gblDecls    []ast.Decl        // global declarations
-	fset        *token.FileSet    // fileset of Go+ code
-	cfun        *FuncInfo         // current function
-	cstmt       interface{}       // current statement
+	out         *Code                    // golang code
+	pkgName     string                   // package name
+	types       map[reflect.Type]*GoType // type => gotype
+	imports     map[string]string        // pkgPath => aliasName
+	importPaths map[string]string        // aliasName => pkgPath
+	gblScope    scopeCtx                 // global scope
+	gblDecls    []ast.Decl               // global declarations
+	fset        *token.FileSet           // fileset of Go+ code
+	cfun        *FuncInfo                // current function
+	cstmt       interface{}              // current statement
 	reserveds   []*printer.ReservedExpr
 	comprehens  func()   // current comprehension
 	identBase   int      // auo-increasement ident index
@@ -114,6 +115,7 @@ func NewBuilder(pkgName string, code *Code, fset *token.FileSet) *Builder {
 	p := &Builder{
 		out:         code,
 		gblDecls:    make([]ast.Decl, 0, 4),
+		types:       make(map[reflect.Type]*GoType),
 		imports:     make(map[string]string),
 		importPaths: make(map[string]string),
 		fset:        fset,
@@ -147,15 +149,27 @@ func (p *Builder) Resolve() *Code {
 	if imports != nil {
 		decls = append(decls, imports)
 	}
+	types := p.resolveTypes()
+	if types != nil {
+		decls = append(decls, types)
+	}
 	gblvars := p.gblScope.toGenDecl(p)
 	if gblvars != nil {
 		decls = append(decls, gblvars)
 	}
 	p.endBlockStmt(0)
+
 	if len(p.gblScope.stmts) != 0 {
+		fnName := "main"
+		for _, decl := range p.gblDecls {
+			if d, ok := decl.(*ast.FuncDecl); ok && d.Name.Name == "main" {
+				fnName = "init"
+				break
+			}
+		}
 		body := &ast.BlockStmt{List: p.gblScope.stmts}
 		fn := &ast.FuncDecl{
-			Name: Ident("main"),
+			Name: Ident(fnName),
 			Type: FuncType(p, tyMainFunc),
 			Body: body,
 		}
@@ -199,6 +213,30 @@ func (p *Builder) resolveImports() *ast.GenDecl {
 		Tok:   token.IMPORT,
 		Specs: specs,
 	}
+}
+
+func (p *Builder) resolveTypes() *ast.GenDecl {
+	n := len(p.types)
+	specs := make([]ast.Spec, 0, n)
+	for _, t := range p.types {
+		typ := t.Type()
+		if typ.Kind() == reflect.Ptr {
+			typ = typ.Elem()
+		}
+
+		spec := &ast.TypeSpec{
+			Name: Ident(t.Name()),
+			Type: Type(p, typ, true),
+		}
+		specs = append(specs, spec)
+	}
+	if len(specs) > 0 {
+		return &ast.GenDecl{
+			Tok:   token.TYPE,
+			Specs: specs,
+		}
+	}
+	return nil
 }
 
 // Comment instr

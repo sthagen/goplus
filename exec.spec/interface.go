@@ -54,12 +54,6 @@ func (p Reserved) Push(b Builder, val interface{}) {
 	b.ReservedAsPush(p, val)
 }
 
-// BreakAsReturn - todo
-const BreakAsReturn = -2
-
-// ContinueAsReturn - todo
-const ContinueAsReturn = -3
-
 // ForPhrase represents a for range phrase.
 type ForPhrase interface {
 }
@@ -269,11 +263,17 @@ type Builder interface {
 	// DefineFunc instr
 	DefineFunc(fun FuncInfo) Builder
 
+	// DefineType name string,reflect.Typeinstr
+	DefineType(typ reflect.Type, name string) Builder
+
 	// Return instr
 	Return(n int32) Builder
 
 	// Load instr
 	Load(idx int32) Builder
+
+	// Addr instr
+	Addr(idx int32) Builder
 
 	// Store instr
 	Store(idx int32) Builder
@@ -333,7 +333,7 @@ type Builder interface {
 	Append(typ reflect.Type, arity int) Builder
 
 	// MapIndex instr
-	MapIndex() Builder
+	MapIndex(twoValue bool) Builder
 
 	// SetMapIndex instr
 	SetMapIndex() Builder
@@ -385,6 +385,12 @@ type Builder interface {
 
 	// EndBlock instr
 	EndBlock() Builder
+
+	// Send instr
+	Send() Builder
+
+	// Recv instr
+	Recv() Builder
 }
 
 // Package represents a Go+ package.
@@ -402,7 +408,7 @@ type Package interface {
 	NewComprehension(out reflect.Type) Comprehension
 
 	// NewFunc creates a Go+ function.
-	NewFunc(name string, nestDepth uint32) FuncInfo
+	NewFunc(name string, nestDepth uint32, funcType ...int) FuncInfo
 
 	// FindGoPackage lookups a Go package by pkgPath. It returns nil if not found.
 	FindGoPackage(pkgPath string) GoPackage

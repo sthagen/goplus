@@ -1,9 +1,33 @@
-println(struct {
-	A int
-	B string
-}{1, "Hello"})
+type C struct {
+	D int
+	F string
+}
 
-println(&struct {
+a := struct {
 	A int
 	B string
-}{1, "Hello"})
+	C C
+}{1, "Hello", C{2, "World"}}
+
+println(a)
+
+b := &struct {
+	A int
+	B string
+}{1, "Hello"}
+
+c := &struct {
+	a int
+	b string
+}{1, "Hello"}
+
+println(b)
+
+a.A, a.B = 2, "Hi"
+println(a)
+
+b.B = "Hi"
+println(b)
+
+c.a, c.b = 2, "Hi"
+println(c)

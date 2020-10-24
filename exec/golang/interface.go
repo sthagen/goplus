@@ -54,11 +54,11 @@ func (p *interfaceImpl) NewComprehension(out reflect.Type) exec.Comprehension {
 }
 
 // NewFunc create a Go+ function.
-func (p *interfaceImpl) NewFunc(name string, nestDepth uint32) exec.FuncInfo {
+func (p *interfaceImpl) NewFunc(name string, nestDepth uint32, funcType ...int) exec.FuncInfo {
 	if nestDepth == 0 {
 		return nil
 	}
-	return NewFunc(name, nestDepth)
+	return NewFunc(name, nestDepth, funcType[0])
 }
 
 // FindGoPackage lookups a Go package by pkgPath. It returns nil if not found.
@@ -172,6 +172,18 @@ func (p *iBuilder) Defer() exec.Builder {
 	return p
 }
 
+// Send instr
+func (p *iBuilder) Send() exec.Builder {
+	((*Builder)(p)).Send()
+	return p
+}
+
+// Recv instr
+func (p *iBuilder) Recv() exec.Builder {
+	((*Builder)(p)).Recv()
+	return p
+}
+
 // Go instr
 func (p *iBuilder) Go() exec.Builder {
 	((*Builder)(p)).Go()
@@ -281,6 +293,12 @@ func (p *iBuilder) Load(idx int32) exec.Builder {
 	return p
 }
 
+// Addr instr
+func (p *iBuilder) Addr(idx int32) exec.Builder {
+	((*Builder)(p)).Addr(idx)
+	return p
+}
+
 // Store instr
 func (p *iBuilder) Store(idx int32) exec.Builder {
 	((*Builder)(p)).Store(idx)
@@ -296,6 +314,12 @@ func (p *iBuilder) EndFunc(fun exec.FuncInfo) exec.Builder {
 // DefineVar defines variables.
 func (p *iBuilder) DefineVar(vars ...exec.Var) exec.Builder {
 	((*Builder)(p)).DefineVar(vars...)
+	return p
+}
+
+// DefineType defines variables.
+func (p *iBuilder) DefineType(typ reflect.Type, name string) exec.Builder {
+	((*Builder)(p)).DefineType(typ, name)
 	return p
 }
 
@@ -389,7 +413,7 @@ func (p *iBuilder) Make(typ reflect.Type, arity int) exec.Builder {
 }
 
 // MapIndex instr
-func (p *iBuilder) MapIndex() exec.Builder {
+func (p *iBuilder) MapIndex(twoValue bool) exec.Builder {
 	((*Builder)(p)).MapIndex()
 	return p
 }

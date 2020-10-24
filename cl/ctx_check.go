@@ -82,6 +82,10 @@ func isNoExecCtxStmt(ctx *blockCtx, stmt ast.Stmt) bool {
 		return isNoExecCtxCallExpr(ctx, v.Call)
 	case *ast.GoStmt:
 		return isNoExecCtxCallExpr(ctx, v.Call)
+	case *ast.DeclStmt:
+		return isNoExecCtxDeclStmt(ctx, v)
+	case *ast.SendStmt:
+		return true
 	default:
 		log.Panicln("isNoExecCtxStmt failed: unknown -", reflect.TypeOf(v))
 	}
@@ -120,6 +124,8 @@ func isNoExecCtxExpr(ctx *blockCtx, expr ast.Expr) bool {
 		return isNoExecCtxListComprehensionExpr(ctx, v)
 	case *ast.MapComprehensionExpr:
 		return isNoExecCtxMapComprehensionExpr(ctx, v)
+	case *ast.StarExpr:
+		return isNoExecCtxStarExpr(ctx, v)
 	case *ast.ArrayType:
 		return true
 	case *ast.Ellipsis:
@@ -188,8 +194,10 @@ func isNoExecCtxRangeStmt(parent *blockCtx, v *ast.RangeStmt) bool {
 
 func isNoExecForStmt(parent *blockCtx, v *ast.ForStmt) bool {
 	ctx := newBlockCtxWithFlag(parent)
-	if noExecCtx := isNoExecCtxExpr(ctx, v.Cond); !noExecCtx {
-		return false
+	if v.Cond != nil {
+		if noExecCtx := isNoExecCtxExpr(ctx, v.Cond); !noExecCtx {
+			return false
+		}
 	}
 	for _, e := range []ast.Stmt{v.Init, v.Post} {
 		if e == nil {
@@ -256,6 +264,13 @@ func isNoExecCtx2nd(ctx *blockCtx, a, b ast.Expr) bool {
 	return isNoExecCtxExpr(ctx, b)
 }
 
+func isNoExecCtxStarExpr(ctx *blockCtx, v *ast.StarExpr) bool {
+	if noExecCtx := isNoExecCtxExpr(ctx, v.X); !noExecCtx {
+		return false
+	}
+	return true
+}
+
 func isNoExecCtxCallExpr(ctx *blockCtx, v *ast.CallExpr) bool {
 	switch expr := v.Fun.(type) {
 	case *ast.Ident:
@@ -282,15 +297,7 @@ func isNoExecCtxExprs(ctx *blockCtx, exprs []ast.Expr) bool {
 }
 
 func isNoExecCtxSwitchStmt(ctx *blockCtx, v *ast.SwitchStmt) bool {
-	var ctxSw *blockCtx
-	if v.Init != nil {
-		ctxSw = newBlockCtxWithFlag(ctx)
-		if noExecCtx := isNoExecCtxStmt(ctxSw, v.Init); !noExecCtx {
-			return false
-		}
-	} else {
-		ctxSw = ctx
-	}
+	ctxSw := ctx
 	if v.Tag != nil {
 		if noExecCtx := isNoExecCtxExpr(ctxSw, v.Tag); !noExecCtx {
 			return false
@@ -315,15 +322,7 @@ func isNoExecCtxSwitchStmt(ctx *blockCtx, v *ast.SwitchStmt) bool {
 }
 
 func isNoExecCtxIfStmt(ctx *blockCtx, v *ast.IfStmt) bool {
-	var ctxIf *blockCtx
-	if v.Init != nil {
-		ctxIf = newBlockCtxWithFlag(ctx)
-		if noExecCtx := isNoExecCtxStmt(ctxIf, v.Init); !noExecCtx {
-			return false
-		}
-	} else {
-		ctxIf = ctx
-	}
+	ctxIf := ctx
 	if noExecCtx := isNoExecCtxExpr(ctxIf, v.Cond); !noExecCtx {
 		return false
 	}
@@ -349,6 +348,29 @@ func isNoExecCtxAssignStmt(ctx *blockCtx, expr *ast.AssignStmt) bool {
 	return true
 }
 
+func isNoExecCtxDeclStmt(ctx *blockCtx, expr *ast.DeclStmt) bool {
+	switch d := expr.Decl.(type) {
+	case *ast.GenDecl:
+		switch d.Tok {
+		case token.VAR, token.CONST:
+			for _, spec := range d.Specs {
+				vs := spec.(*ast.ValueSpec)
+				if vs.Values != nil {
+					if noExecCtx := isNoExecCtxExprs(ctx, vs.Values); !noExecCtx {
+						return false
+					}
+				}
+				for i := len(vs.Names) - 1; i >= 0; i-- {
+					if noExecCtx := isNoExecCtxExprLHS(ctx, vs.Names[i], lhsAssign); !noExecCtx {
+						return false
+					}
+				}
+			}
+		}
+	}
+	return true
+}
+
 func isNoExecCtxExprLHS(ctx *blockCtx, expr ast.Expr, mode compileMode) bool {
 	switch v := expr.(type) {
 	case *ast.Ident:
@@ -357,6 +379,8 @@ func isNoExecCtxExprLHS(ctx *blockCtx, expr ast.Expr, mode compileMode) bool {
 		return isNoExecCtxIndexExprLHS(ctx, v, mode)
 	case *ast.SelectorExpr:
 		return isNoExecCtxSelectorExprLHS(ctx, v, mode)
+	case *ast.StarExpr:
+		return isNoExecCtxStarExprLHS(ctx, v, mode)
 	default:
 		log.Panicln("isNoExecCtxExprLHS failed: unknown -", reflect.TypeOf(v))
 	}
@@ -378,6 +402,13 @@ func isNoExecCtxIdentLHS(ctx *blockCtx, name string, mode compileMode) bool {
 }
 
 func isNoExecCtxSelectorExprLHS(ctx *blockCtx, v *ast.SelectorExpr, mode compileMode) bool {
+	if noExecCtx := isNoExecCtxExpr(ctx, v.X); !noExecCtx {
+		return false
+	}
+	return true
+}
+
+func isNoExecCtxStarExprLHS(ctx *blockCtx, v *ast.StarExpr, mode compileMode) bool {
 	if noExecCtx := isNoExecCtxExpr(ctx, v.X); !noExecCtx {
 		return false
 	}

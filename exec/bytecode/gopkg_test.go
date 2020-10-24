@@ -354,13 +354,13 @@ func TestMapField(t *testing.T) {
 	code := b.
 		LoadGoVar(x).
 		Push(0).
-		MapIndex().
+		MapIndex(false).
 		LoadGoVar(x).
 		Push(5).
 		SetMapIndex(). // pkg.M[5] = pkg.M[0]
 		LoadGoVar(x).
 		Push(5).
-		MapIndex().
+		MapIndex(false).
 		LoadField(typ, []int{1}). // pkg.M[5]
 		Resolve()
 	ctx := NewContext(code)
@@ -396,7 +396,7 @@ func TestMapBadStoreField(t *testing.T) {
 		Push(-1).
 		LoadGoVar(x).
 		Push(0).
-		MapIndex().
+		MapIndex(false).
 		StoreField(typ, []int{1}). // pkg.M[0].Y = -1 , cannot assign
 		Resolve()
 
@@ -407,7 +407,7 @@ func TestMapBadStoreField(t *testing.T) {
 func TestSliceField(t *testing.T) {
 	pkg := NewGoPackage("pkg_slice_field")
 
-	rcm := []testPoint{testPoint{10, 20}, testPoint{100, 200}, testPoint{200, 300}}
+	rcm := []testPoint{{10, 20}, {100, 200}, {200, 300}}
 
 	pkg.RegisterVars(pkg.Var("M", &rcm))
 	x, ok := pkg.FindVar("M")
@@ -450,7 +450,7 @@ func TestArrayBadStoreField(t *testing.T) {
 
 	pkg := NewGoPackage("pkg_array_bad_store_field")
 
-	rcm := [2]testPoint{testPoint{10, 20}, testPoint{100, 200}}
+	rcm := [2]testPoint{{10, 20}, {100, 200}}
 
 	pkg.RegisterVars(pkg.Var("M", &rcm))
 	x, ok := pkg.FindVar("M")
