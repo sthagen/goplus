@@ -188,6 +188,12 @@ func compileIdent(ctx *blockCtx, ident *ast.Ident, compileByCallExpr bool) func(
 	}
 	if sym, ok := ctx.find(name); ok {
 		switch v := sym.(type) {
+		case *constVal:
+			c := newConstVal(v.v, v.Kind())
+			ctx.infer.Push(c)
+			return func() {
+				pushConstVal(ctx.out, c)
+			}
 		case *execVar:
 			typ := v.v.Type()
 			kind := typ.Kind()
@@ -232,6 +238,11 @@ func compileIdent(ctx *blockCtx, ident *ast.Ident, compileByCallExpr bool) func(
 			log.Panicln("compileIdent failed: unknown -", reflect.TypeOf(sym))
 		}
 	} else {
+		if name == "iota" {
+			c := newIotaValue()
+			ctx.infer.Push(c)
+			return nil
+		}
 		if addr, kind, ok := ctx.builtin.Find(name); ok {
 			switch kind {
 			case exec.SymbolVar:
@@ -659,14 +670,30 @@ func compileBinaryExpr(ctx *blockCtx, v *ast.BinaryExpr) func() {
 	xcons, xok := x.(*constVal)
 	ycons, yok := y.(*constVal)
 	if xok && yok { // <const> op <const>
+		if op == exec.OpLsh && xcons.kind == exec.ConstUnboundFloat {
+			v := xcons.v.(float64)
+			if v != float64(int64(v)) {
+				log.Panicf("constant %v truncated to integer", v)
+			}
+			xcons.kind = exec.ConstUnboundInt
+		}
 		ret := binaryOp(op, xcons, ycons)
 		ctx.infer.Ret(2, ret)
 		return func() {
 			ret.reserve = ctx.out.Reserve()
 		}
 	}
-	kind, ret := binaryOpResult(op, x, y)
-	ctx.infer.Ret(2, ret)
+	var kind iKind
+	var lsh *lshValue
+	if op == exec.OpLsh && xok && !isConstBound(xcons.kind) {
+		kind = xcons.kind
+		lsh = &lshValue{x: xcons, r: exec.InvalidReserved}
+		ctx.infer.Ret(2, lsh)
+	} else {
+		var ret iValue
+		kind, ret = binaryOpResult(op, x, y)
+		ctx.infer.Ret(2, ret)
+	}
 	return func() {
 		var label exec.Label
 		exprX()
@@ -679,6 +706,26 @@ func compileBinaryExpr(ctx *blockCtx, v *ast.BinaryExpr) func() {
 			}
 		}
 		exprY()
+		if lsh != nil {
+			if !isConstBound(xcons.kind) {
+				lsh.r = ctx.out.ReserveOpLsh()
+				lsh.fnCheckType = func(typ reflect.Type) {
+					kind := typ.Kind()
+					xcons.v = boundConst(xcons.v, typ)
+					checkBinaryOp(kind, op, x, y, ctx.out)
+					if err := checkOpMatchType(op, x, y); err != nil {
+						log.Panicf("invalid operator: %v (%v)", ctx.code(v), err)
+					}
+					ctx.out.ReservedAsOpLsh(lsh.r, kind, op)
+				}
+				if label != nil {
+					ctx.out.Label(label)
+				}
+				return
+			}
+			kind = xcons.kind
+		}
+
 		checkBinaryOp(kind, op, x, y, ctx.out)
 		if err := checkOpMatchType(op, x, y); err != nil {
 			log.Panicf("invalid operator: %v (%v)", ctx.code(v), err)
@@ -699,7 +746,25 @@ func binaryOpResult(op exec.Operator, x, y interface{}) (exec.Kind, iValue) {
 	kind := vx.Kind()
 	if !isConstBound(kind) {
 		kind = vy.Kind()
-		if !isConstBound(kind) {
+		if xlsh, xok := x.(*lshValue); xok {
+			var unbound bool
+			if !isConstBound(kind) {
+				if kind != xlsh.Kind() {
+					unbound = true
+				}
+				if c, ok := y.(*constVal); ok {
+					kind = c.boundKind()
+					c.v = boundConst(c.v, c.boundType())
+					c.kind = kind
+				} else if lsh, ok := y.(*lshValue); ok && lsh.Kind() == exec.ConstUnboundInt {
+					kind = exec.Int
+					lsh.bound(exec.TyInt)
+				}
+			}
+			if !unbound {
+				xlsh.bound(vy.Type())
+			}
+		} else if !isConstBound(kind) {
 			log.Panicln("binaryOp: expect x, y aren't const values either.")
 		}
 	}
@@ -998,7 +1063,10 @@ func compileIdx(ctx *blockCtx, v ast.Expr, nlast int, kind reflect.Kind) int {
 		}
 		ctx.out.Push(n)
 		return -1
+	} else if lsh, ok := i.(*lshValue); ok {
+		lsh.bound(exec.TyInt)
 	}
+
 	expr()
 	if typIdx := i.(iValue).Type(); typIdx != exec.TyInt {
 		if typIdx.ConvertibleTo(exec.TyInt) {
@@ -1314,6 +1382,12 @@ func compileSelectorExpr(ctx *blockCtx, call *ast.CallExpr, v *ast.SelectorExpr,
 			}
 			switch kind {
 			case exec.SymbolFunc, exec.SymbolFuncv:
+				if nv.PkgPath() == "unsafe" {
+					if gi, ok := goinstrs["unsafe."+name]; ok {
+						ctx.infer.Push(&nonValue{gi.instr})
+						return nil
+					}
+				}
 				if compileByCallExpr {
 					fn := newGoFunc(addr, kind, 0, ctx)
 					ctx.infer.Ret(1, fn)
